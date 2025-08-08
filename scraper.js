@@ -1522,8 +1522,8 @@ class SamehadakuScraper {
           currentPage++;
           console.log(`Moving to page ${currentPage}...`);
           
-          // Add delay between pages
-          await this.delay(1000);
+          // Add delay between pages (reduced for production)
+          await this.delay(500);
           
         } catch (error) {
           console.error(`Error accessing page ${currentPage}:`, error.message);

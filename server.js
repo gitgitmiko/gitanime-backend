@@ -448,7 +448,8 @@ app.get('/api/anime-list', async (req, res) => {
     
     if (shouldScrape) {
       console.log('Scraping fresh anime list...');
-      const animeList = await scraper.scrapeAnimeList();
+      // Use batch scraping for better production performance
+      const animeList = await scraper.scrapeAnimeListBatch(1, 10);
       animeData = await scraper.saveAnimeList(animeList);
     } else {
       console.log('Loading existing anime list...');
@@ -507,7 +508,8 @@ app.post('/api/scrape-anime-list', async (req, res) => {
     }
     
     console.log('Manual anime list scraping triggered');
-    const animeList = await scraper.scrapeAnimeList();
+    // Use batch scraping for better production performance
+    const animeList = await scraper.scrapeAnimeListBatch(1, 10);
     const result = await scraper.saveAnimeList(animeList);
     
     res.json({ 
@@ -515,7 +517,8 @@ app.post('/api/scrape-anime-list', async (req, res) => {
       message: 'Anime list scraping completed successfully',
       data: {
         totalAnime: result.totalAnime,
-        lastUpdated: result.lastUpdated
+        lastUpdated: result.lastUpdated,
+        pagesScraped: '1-10'
       }
     });
   } catch (error) {
@@ -557,6 +560,40 @@ app.get('/api/episode-video', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch episode video' 
+    });
+  }
+});
+
+// Test batch scraping with specific page range (admin only)
+app.post('/api/scrape-anime-list-batch', async (req, res) => {
+  try {
+    const { password, startPage = 1, endPage = 10 } = req.body;
+    
+    if (password !== process.env.ADMIN_PASSWORD) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    console.log(`Manual batch anime list scraping triggered: pages ${startPage}-${endPage}`);
+    
+    // Use batch scraping with specified range
+    const animeList = await scraper.scrapeAnimeListBatch(parseInt(startPage), parseInt(endPage));
+    const result = await scraper.saveAnimeList(animeList);
+    
+    res.json({ 
+      success: true,
+      message: `Anime list batch scraping completed successfully for pages ${startPage}-${endPage}`,
+      data: {
+        totalAnime: result.totalAnime,
+        lastUpdated: result.lastUpdated,
+        pagesScraped: `${startPage}-${endPage}`
+      }
+    });
+  } catch (error) {
+    console.error('Error in batch anime list scraping:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to scrape anime list',
+      details: error.message 
     });
   }
 });

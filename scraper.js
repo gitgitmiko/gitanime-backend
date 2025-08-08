@@ -1424,14 +1424,19 @@ class SamehadakuScraper {
           : `${this.baseUrl}daftar-anime-2/page/${currentPage}/`;
         
         console.log(`URL: ${pageUrl}`);
+        console.log(`Current page variable: ${currentPage}`);
         
         try {
+          console.log('Making HTTP request...');
           const response = await axios.get(pageUrl, {
             timeout: 30000,
             headers: {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
           });
+          
+          console.log(`Response status: ${response.status}`);
+          console.log(`Response data length: ${response.data.length}`);
           
           const $ = cheerio.load(response.data);
           
@@ -1443,11 +1448,12 @@ class SamehadakuScraper {
             break;
           }
           
-                  console.log(`Found ${animeEntries.length} anime entries on page ${currentPage}`);
-        
-        successfulPages++;
-        
-        for (let i = 0; i < animeEntries.length; i++) {
+          console.log(`Found ${animeEntries.length} anime entries on page ${currentPage}`);
+          successfulPages++;
+          
+          let addedCount = 0;
+          
+          for (let i = 0; i < animeEntries.length; i++) {
             const entry = $(animeEntries[i]);
             
             try {
@@ -1460,15 +1466,17 @@ class SamehadakuScraper {
                 continue;
               }
               
-              // Extract link
+              // Extract link - fix URL duplication issue
               const linkElement = entry.find('.animposx a').first();
               const link = linkElement.attr('href');
-              const fullLink = link ? this.resolveUrl(link) : null;
+              // Don't use resolveUrl for absolute URLs
+              const fullLink = link ? (link.startsWith('http') ? link : `${this.baseUrl}${link.replace(/^\//, '')}`) : null;
               
-              // Extract image
+              // Extract image - fix URL duplication issue
               const imgElement = entry.find('.content-thumb img.anmsa').first();
               const imageUrl = imgElement.attr('src') || imgElement.attr('data-src');
-              const fullImageUrl = imageUrl ? this.resolveImageUrl(imageUrl) : null;
+              // Don't use resolveImageUrl for absolute URLs
+              const fullImageUrl = imageUrl ? (imageUrl.startsWith('http') ? imageUrl : `${this.baseUrl}${imageUrl.replace(/^\//, '')}`) : null;
               
               // Extract rating/score
               const ratingElement = entry.find('.score');
@@ -1512,6 +1520,7 @@ class SamehadakuScraper {
               const existingIndex = allAnime.findIndex(anime => anime.title === title);
               if (existingIndex === -1) {
                 allAnime.push(animeData);
+                addedCount++;
                 console.log(`✅ Added anime: ${title} (page ${currentPage})`);
               } else {
                 console.log(`⚠️ Skipping duplicate: ${title}`);
@@ -1523,11 +1532,14 @@ class SamehadakuScraper {
             }
           }
           
+          console.log(`Added ${addedCount} new anime from page ${currentPage}`);
+          
           // Move to next page
           currentPage++;
           console.log(`Moving to page ${currentPage}...`);
           
           // Add delay between pages (reduced for production)
+          console.log('Waiting 500ms before next page...');
           await this.delay(500);
           
         } catch (error) {
@@ -1541,6 +1553,142 @@ class SamehadakuScraper {
       
     } catch (error) {
       console.error('Error scraping anime list:', error);
+      throw error;
+    }
+  }
+
+  async scrapeAnimeListBatch(startPage = 1, endPage = 10) {
+    console.log(`Starting batch scraping from page ${startPage} to ${endPage}...`);
+    
+    const allAnime = [];
+    let successfulPages = 0;
+    
+    try {
+      for (let currentPage = startPage; currentPage <= endPage; currentPage++) {
+        console.log(`\n=== Batch Scraping page ${currentPage}/${endPage} ===`);
+        
+        const pageUrl = currentPage === 1 
+          ? `${this.baseUrl}daftar-anime-2/`
+          : `${this.baseUrl}daftar-anime-2/page/${currentPage}/`;
+        
+        console.log(`URL: ${pageUrl}`);
+        
+        try {
+          const response = await axios.get(pageUrl, {
+            timeout: 45000, // Increased timeout for production
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+          });
+          
+          const $ = cheerio.load(response.data);
+          
+          // Find all anime entries
+          const animeEntries = $('article.animpost');
+          
+          if (animeEntries.length === 0) {
+            console.log(`No anime entries found on page ${currentPage}, stopping batch...`);
+            break;
+          }
+          
+          console.log(`Found ${animeEntries.length} anime entries on page ${currentPage}`);
+          successfulPages++;
+          
+          let addedCount = 0;
+          
+          for (let i = 0; i < animeEntries.length; i++) {
+            const entry = $(animeEntries[i]);
+            
+            try {
+              // Extract anime information
+              const titleElement = entry.find('.data .title h2');
+              const title = titleElement.text().trim();
+              
+              if (!title) {
+                continue;
+              }
+              
+              // Extract link
+              const linkElement = entry.find('.animposx a').first();
+              const link = linkElement.attr('href');
+              const fullLink = link ? (link.startsWith('http') ? link : `${this.baseUrl}${link.replace(/^\//, '')}`) : null;
+              
+              // Extract image
+              const imgElement = entry.find('.content-thumb img.anmsa').first();
+              const imageUrl = imgElement.attr('src') || imgElement.attr('data-src');
+              const fullImageUrl = imageUrl ? (imageUrl.startsWith('http') ? imageUrl : `${this.baseUrl}${imageUrl.replace(/^\//, '')}`) : null;
+              
+              // Extract rating/score
+              const ratingElement = entry.find('.score');
+              const rating = ratingElement.text().trim();
+              
+              // Extract status (ongoing/completed)
+              const statusElement = entry.find('.data .type');
+              const status = statusElement.text().trim();
+              
+              // Extract type (TV, Movie, OVA, etc.)
+              const typeElement = entry.find('.content-thumb .type');
+              const type = typeElement.text().trim();
+              
+              // Extract genres
+              const genreElements = entry.find('.stooltip .genres .mta a');
+              const genres = genreElements.map((index, element) => $(element).text().trim()).get();
+              
+              // Extract description/synopsis
+              const descElement = entry.find('.stooltip .ttls');
+              const description = descElement.text().trim();
+              
+              // Extract episode count or other info
+              const episodeElement = entry.find('.metadata span:last-child');
+              const episodeInfo = episodeElement.text().trim();
+              
+              const animeData = {
+                id: this.generateId(title),
+                title: title,
+                link: fullLink,
+                imageUrl: fullImageUrl,
+                rating: rating || null,
+                status: status || null,
+                type: type || null,
+                genres: genres.length > 0 ? genres : [],
+                description: description || null,
+                episodeInfo: episodeInfo || null,
+                scrapedAt: new Date().toISOString()
+              };
+              
+              // Check if this anime is already in the list (avoid duplicates)
+              const existingIndex = allAnime.findIndex(anime => anime.title === title);
+              if (existingIndex === -1) {
+                allAnime.push(animeData);
+                addedCount++;
+              }
+              
+            } catch (error) {
+              console.error(`Error processing anime entry ${i + 1} on page ${currentPage}:`, error.message);
+              continue;
+            }
+          }
+          
+          console.log(`Added ${addedCount} new anime from page ${currentPage}`);
+          
+          // Add longer delay between pages for production
+          if (currentPage < endPage) {
+            console.log('Waiting 2 seconds before next page...');
+            await this.delay(2000);
+          }
+          
+        } catch (error) {
+          console.error(`Error accessing page ${currentPage}:`, error.message);
+          // Continue with next page instead of breaking
+          continue;
+        }
+      }
+      
+      console.log(`✅ Batch scraping completed! Total anime found: ${allAnime.length} from ${successfulPages} pages`);
+      return allAnime;
+      
+    } catch (error) {
+      console.error('Error in batch scraping:', error);
       throw error;
     }
   }

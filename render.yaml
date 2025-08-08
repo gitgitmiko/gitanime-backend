@@ -3,7 +3,7 @@ services:
     name: gitanime-backend
     env: node
     plan: free
-    buildCommand: npm install
+    buildCommand: npm run build
     startCommand: npm start
     envVars:
       - key: NODE_ENV
@@ -12,3 +12,10 @@ services:
         value: 10000
     healthCheckPath: /health
     autoDeploy: true
+    buildFilter:
+      paths:
+        - "**/*"
+    routes:
+      - type: rewrite
+        source: /(.*)
+        destination: /

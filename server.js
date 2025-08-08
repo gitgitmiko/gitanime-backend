@@ -311,11 +311,17 @@ app.get('/api/episode-video', async (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`GitAnime API server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/api/health`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
 // Export for Vercel
 module.exports = app;
 
-// Initialize scraping on startup
-scraper.initialize();
+// Initialize scraping only in development or when explicitly requested
+if (process.env.NODE_ENV !== 'production') {
+  console.log('Development mode: Initializing scraper...');
+  scraper.initialize();
+} else {
+  console.log('Production mode: Skipping automatic scraper initialization');
+}

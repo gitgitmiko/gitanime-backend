@@ -282,8 +282,11 @@ app.post('/api/scrape', async (req, res) => {
     
     console.log('🎉 All scraping processes completed successfully!');
     
+    const lastUpdated = new Date().toISOString();
+    
     res.json({ 
       message: 'All scraping processes completed successfully',
+      lastUpdated: lastUpdated,
       summary: {
         mainScraping: 'Completed',
         animeListScraping: `${animeList.length} anime found`,
@@ -319,8 +322,11 @@ app.post('/api/scrape-test', async (req, res) => {
     
     console.log('🎉 All scraping processes completed successfully!');
     
+    const lastUpdated = new Date().toISOString();
+    
     res.json({ 
       message: 'All scraping processes completed successfully',
+      lastUpdated: lastUpdated,
       summary: {
         mainScraping: 'Completed',
         animeListScraping: `${animeList.length} anime found`,

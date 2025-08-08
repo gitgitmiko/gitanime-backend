@@ -1038,6 +1038,44 @@ app.get('/api/video-url', async (req, res) => {
   }
 });
 
+// Debug endpoint untuk mengecek status cron job
+app.get('/api/cron-status', async (req, res) => {
+  try {
+    const now = new Date();
+    const serverTime = {
+      utc: now.toISOString(),
+      local: now.toString(),
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      hours: now.getHours(),
+      minutes: now.getMinutes(),
+      seconds: now.getSeconds()
+    };
+
+    // Calculate next midnight
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(0, 0, 0, 0);
+
+    const cronStatus = {
+      serverTime: serverTime,
+      nextMidnight: tomorrow.toISOString(),
+      timeUntilNext: tomorrow.getTime() - now.getTime(),
+      cronExpression: '0 0 * * *',
+      isPastMidnight: now.getHours() >= 0 && now.getMinutes() >= 0
+    };
+
+    res.json({
+      message: 'Cron job status',
+      cronStatus: cronStatus,
+      scraperInitialized: !!scraper,
+      isScraping: scraper ? scraper.isScraping : false
+    });
+  } catch (error) {
+    console.error('Error checking cron status:', error);
+    res.status(500).json({ error: 'Failed to check cron status' });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`GitAnime API server running on port ${PORT}`);

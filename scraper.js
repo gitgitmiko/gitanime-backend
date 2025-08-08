@@ -200,27 +200,13 @@ class SamehadakuScraper {
               postedBy: postedBy,
               releasedOn: releasedOn,
               animeId: this.generateId(title),
-              image: this.getAnimeImageSync(title),
-              episodeScreenshot: null, // Will be populated later
               createdAt: new Date().toISOString()
             });
           }
         }
       });
 
-      // Get episode screenshots for each anime
-      for (let i = 0; i < latestEpisodes.length; i++) {
-        const episode = latestEpisodes[i];
-        try {
-          // Use the same image as screenshot for now
-          latestEpisodes[i].episodeScreenshot = episode.image;
-          console.log(`✅ Set screenshot for ${episode.title} Episode ${episode.episodeNumber}`);
-        } catch (error) {
-          console.log(`❌ Failed to set screenshot for ${episode.title}: ${error.message}`);
-        }
-      }
-
-      console.log(`Found ${latestEpisodes.length} latest episodes with images`);
+      console.log(`Found ${latestEpisodes.length} latest episodes`);
       return latestEpisodes;
     } catch (error) {
       console.error('Error scraping latest episodes:', error);
@@ -1799,8 +1785,6 @@ class SamehadakuScraper {
                   postedBy: postedBy,
                   releasedOn: releasedOn,
                   animeId: this.generateId(title),
-                  image: this.getAnimeImageSync(title),
-                  episodeScreenshot: null, // Will be populated later
                   createdAt: new Date().toISOString(),
                   pageNumber: currentPage
                 });
@@ -1816,16 +1800,10 @@ class SamehadakuScraper {
           console.log(`Found ${pageEpisodes.length} episode entries on page ${currentPage}`);
           successfulPages++;
           
-          // Get episode screenshots for each anime on this page
+          // Process episodes for this page
           for (let i = 0; i < pageEpisodes.length; i++) {
             const episode = pageEpisodes[i];
-            try {
-              // Use the same image as screenshot for now
-              pageEpisodes[i].episodeScreenshot = episode.image;
-              console.log(`✅ Set screenshot for ${episode.title} Episode ${episode.episodeNumber}`);
-            } catch (error) {
-              console.log(`❌ Failed to set screenshot for ${episode.title}: ${error.message}`);
-            }
+            console.log(`✅ Processed ${episode.title} Episode ${episode.episodeNumber}`);
           }
 
           // Add episodes from this page to the main array

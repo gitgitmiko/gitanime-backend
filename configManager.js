@@ -21,7 +21,7 @@ class ConfigManager {
       if (!configExists) {
         const defaultConfig = {
           sourceUrl: 'https://v1.samehadaku.how/',
-          scrapingInterval: '0 * * * *',
+          scrapingInterval: '0 0 * * *',
           autoScraping: true
         };
         await fs.writeJson(this.configFile, defaultConfig, { spaces: 2 });
@@ -39,7 +39,7 @@ class ConfigManager {
       console.error('Error reading config:', error);
       return {
         sourceUrl: 'https://v1.samehadaku.how/',
-        scrapingInterval: '0 * * * *',
+        scrapingInterval: '0 0 * * *',
         autoScraping: true
       };
     }

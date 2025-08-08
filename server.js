@@ -318,10 +318,7 @@ app.listen(PORT, () => {
 // Export for Vercel
 module.exports = app;
 
-// Initialize scraping only in development or when explicitly requested
-if (process.env.NODE_ENV !== 'production') {
-  console.log('Development mode: Initializing scraper...');
-  scraper.initialize();
-} else {
-  console.log('Production mode: Skipping automatic scraper initialization');
-}
+// Initialize scraping in all environments
+// Auto-scraping will run daily at midnight (12 AM)
+console.log(`${process.env.NODE_ENV || 'development'} mode: Initializing scraper...`);
+scraper.initialize();

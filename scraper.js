@@ -17,9 +17,9 @@ class SamehadakuScraper {
     // Ensure data file exists
             await this.ensureDataFile();
         
-        // Schedule scraping every 6 hours
-        cron.schedule('0 */6 * * *', async () => {
-          console.log('Running scheduled scrape...');
+        // Schedule scraping every day at midnight (12 AM)
+        cron.schedule('0 0 * * *', async () => {
+          console.log('Running scheduled scrape at midnight...');
           try {
             await this.scrapeAll();
             console.log('Scheduled scrape completed successfully');

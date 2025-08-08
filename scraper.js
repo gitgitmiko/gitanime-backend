@@ -1405,6 +1405,163 @@ class SamehadakuScraper {
     }
   }
 
+  async scrapeAnimeList() {
+    console.log('Starting to scrape anime list from daftar-anime-2...');
+    
+    const allAnime = [];
+    let currentPage = 1;
+    const maxPages = 50; // Limit to prevent infinite loop
+    
+    try {
+      while (currentPage <= maxPages) {
+        console.log(`Scraping page ${currentPage}...`);
+        
+        const pageUrl = currentPage === 1 
+          ? `${this.baseUrl}daftar-anime-2/`
+          : `${this.baseUrl}daftar-anime-2/page/${currentPage}/`;
+        
+        const response = await axios.get(pageUrl, {
+          timeout: 30000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+          }
+        });
+        
+        const $ = cheerio.load(response.data);
+        
+        // Find all anime entries
+        const animeEntries = $('.anime-list .anime-item, .daftar-anime .anime-item, .anime-grid .anime-item');
+        
+        if (animeEntries.length === 0) {
+          console.log(`No anime entries found on page ${currentPage}, stopping...`);
+          break;
+        }
+        
+        console.log(`Found ${animeEntries.length} anime entries on page ${currentPage}`);
+        
+        for (let i = 0; i < animeEntries.length; i++) {
+          const entry = $(animeEntries[i]);
+          
+          try {
+            // Extract anime information
+            const titleElement = entry.find('h3, h4, .anime-title, .title');
+            const title = titleElement.text().trim();
+            
+            if (!title) {
+              console.log(`Skipping entry ${i + 1} on page ${currentPage} - no title found`);
+              continue;
+            }
+            
+            // Extract link
+            const linkElement = entry.find('a').first();
+            const link = linkElement.attr('href');
+            const fullLink = link ? this.resolveUrl(link) : null;
+            
+            // Extract image
+            const imgElement = entry.find('img').first();
+            const imageUrl = imgElement.attr('src') || imgElement.attr('data-src');
+            const fullImageUrl = imageUrl ? this.resolveImageUrl(imageUrl) : null;
+            
+            // Extract rating/score
+            const ratingElement = entry.find('.rating, .score, .anime-rating');
+            const rating = ratingElement.text().trim();
+            
+            // Extract status (ongoing/completed)
+            const statusElement = entry.find('.status, .anime-status');
+            const status = statusElement.text().trim();
+            
+            // Extract type (TV, Movie, OVA, etc.)
+            const typeElement = entry.find('.type, .anime-type');
+            const type = typeElement.text().trim();
+            
+            // Extract genres
+            const genreElements = entry.find('.genre, .anime-genre');
+            const genres = genreElements.map((index, element) => $(element).text().trim()).get();
+            
+            // Extract description/synopsis
+            const descElement = entry.find('.description, .synopsis, .anime-desc');
+            const description = descElement.text().trim();
+            
+            // Extract episode count or other info
+            const episodeElement = entry.find('.episode-count, .episodes');
+            const episodeInfo = episodeElement.text().trim();
+            
+            const animeData = {
+              id: this.generateId(title),
+              title: title,
+              link: fullLink,
+              imageUrl: fullImageUrl,
+              rating: rating || null,
+              status: status || null,
+              type: type || null,
+              genres: genres.length > 0 ? genres : [],
+              description: description || null,
+              episodeInfo: episodeInfo || null,
+              scrapedAt: new Date().toISOString()
+            };
+            
+            // Check if this anime is already in the list (avoid duplicates)
+            const existingIndex = allAnime.findIndex(anime => anime.title === title);
+            if (existingIndex === -1) {
+              allAnime.push(animeData);
+              console.log(`✅ Added anime: ${title}`);
+            } else {
+              console.log(`⚠️ Skipping duplicate: ${title}`);
+            }
+            
+            // Add delay to be respectful to the server
+            await this.delay(100);
+            
+          } catch (error) {
+            console.error(`Error processing anime entry ${i + 1} on page ${currentPage}:`, error.message);
+            continue;
+          }
+        }
+        
+        // Check if there's a next page
+        const nextPageLink = $('.pagination .next, .pagination a[rel="next"], .pagination a:contains("Next")');
+        if (nextPageLink.length === 0) {
+          console.log(`No next page found, stopping at page ${currentPage}`);
+          break;
+        }
+        
+        currentPage++;
+        
+        // Add delay between pages
+        await this.delay(1000);
+      }
+      
+      console.log(`✅ Anime list scraping completed! Total anime found: ${allAnime.length}`);
+      return allAnime;
+      
+    } catch (error) {
+      console.error('Error scraping anime list:', error);
+      throw error;
+    }
+  }
+
+  async saveAnimeList(animeList) {
+    try {
+      const animeListFile = process.env.ANIME_LIST_FILE || './data/anime-list.json';
+      
+      const data = {
+        animeList: animeList,
+        totalAnime: animeList.length,
+        lastUpdated: new Date().toISOString(),
+        source: `${this.baseUrl}daftar-anime-2/`
+      };
+      
+      await fs.writeJson(animeListFile, data, { spaces: 2 });
+      console.log(`✅ Anime list saved to: ${animeListFile}`);
+      console.log(`Total anime saved: ${animeList.length}`);
+      
+      return data;
+    } catch (error) {
+      console.error('Error saving anime list:', error);
+      throw error;
+    }
+  }
+
 }
 
 const scraper = new SamehadakuScraper();

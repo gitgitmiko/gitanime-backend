@@ -10,11 +10,13 @@ const isProduction = process.env.NODE_ENV === 'production';
 // Data file path
 const DATA_FILE = isProduction ? '/tmp/anime-data.json' : './data/anime-data.json';
 const CONFIG_FILE = isProduction ? '/tmp/config.json' : './data/config.json';
+const ANIME_LIST_FILE = isProduction ? '/tmp/anime-list.json' : './data/anime-list.json';
 
 // Set environment variables for scraper to use the same file paths
 if (isProduction) {
   process.env.DATA_FILE = DATA_FILE;
   process.env.CONFIG_FILE = CONFIG_FILE;
+  process.env.ANIME_LIST_FILE = ANIME_LIST_FILE;
 }
 
 // Import scraper after setting environment variables
@@ -105,6 +107,15 @@ if (isProduction) {
         sourceUrl: 'https://v1.samehadaku.how/',
         scrapingInterval: '0 * * * *',
         autoScraping: true
+      });
+    }
+    
+    if (!fs.existsSync(ANIME_LIST_FILE)) {
+      fs.writeJsonSync(ANIME_LIST_FILE, {
+        animeList: [],
+        totalAnime: 0,
+        lastUpdated: new Date().toISOString(),
+        source: 'https://v1.samehadaku.how/daftar-anime-2/'
       });
     }
   } catch (error) {
@@ -402,6 +413,116 @@ app.get('/api/anime-detail', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: 'Failed to fetch anime detail' 
+    });
+  }
+});
+
+// Get anime list (full catalog)
+app.get('/api/anime-list', async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search = '', forceRefresh = false } = req.query;
+    const animeListFile = process.env.ANIME_LIST_FILE || './data/anime-list.json';
+    
+    // Check if we should force refresh or if file doesn't exist
+    let shouldScrape = forceRefresh === 'true';
+    
+    if (!shouldScrape) {
+      try {
+        const exists = await fs.pathExists(animeListFile);
+        if (!exists) {
+          shouldScrape = true;
+        } else {
+          // Check if file is older than 24 hours
+          const stats = await fs.stat(animeListFile);
+          const hoursSinceUpdate = (Date.now() - stats.mtime.getTime()) / (1000 * 60 * 60);
+          if (hoursSinceUpdate > 24) {
+            shouldScrape = true;
+          }
+        }
+      } catch (error) {
+        shouldScrape = true;
+      }
+    }
+    
+    let animeData;
+    
+    if (shouldScrape) {
+      console.log('Scraping fresh anime list...');
+      const animeList = await scraper.scrapeAnimeList();
+      animeData = await scraper.saveAnimeList(animeList);
+    } else {
+      console.log('Loading existing anime list...');
+      animeData = await fs.readJson(animeListFile);
+    }
+    
+    let filteredAnime = animeData.animeList || [];
+    
+    // Search functionality
+    if (search) {
+      filteredAnime = filteredAnime.filter(anime => 
+        anime.title.toLowerCase().includes(search.toLowerCase()) ||
+        (anime.description && anime.description.toLowerCase().includes(search.toLowerCase())) ||
+        (anime.genres && anime.genres.some(genre => genre.toLowerCase().includes(search.toLowerCase())))
+      );
+    }
+    
+    // Pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + parseInt(limit);
+    const paginatedAnime = filteredAnime.slice(startIndex, endIndex);
+    
+    res.json({
+      success: true,
+      data: {
+        anime: paginatedAnime,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(filteredAnime.length / limit),
+          totalItems: filteredAnime.length,
+          itemsPerPage: parseInt(limit)
+        },
+        summary: {
+          totalAnime: animeData.totalAnime,
+          lastUpdated: animeData.lastUpdated,
+          source: animeData.source
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching anime list:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch anime list' 
+    });
+  }
+});
+
+// Manual anime list scraping trigger (admin only)
+app.post('/api/scrape-anime-list', async (req, res) => {
+  try {
+    const { password } = req.body;
+    
+    if (password !== process.env.ADMIN_PASSWORD) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    console.log('Manual anime list scraping triggered');
+    const animeList = await scraper.scrapeAnimeList();
+    const result = await scraper.saveAnimeList(animeList);
+    
+    res.json({ 
+      success: true,
+      message: 'Anime list scraping completed successfully',
+      data: {
+        totalAnime: result.totalAnime,
+        lastUpdated: result.lastUpdated
+      }
+    });
+  } catch (error) {
+    console.error('Error during anime list scraping:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to scrape anime list' 
     });
   }
 });

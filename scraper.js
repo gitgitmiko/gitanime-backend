@@ -40,6 +40,18 @@ class SamehadakuScraper {
       }
     });
     
+    // Schedule latest episodes batch scraping every day at 2 AM (after anime list)
+    cron.schedule('0 2 * * *', async () => {
+      console.log('Running scheduled latest episodes batch scrape at 2 AM...');
+      try {
+        const latestEpisodes = await this.scrapeLatestEpisodesBatch(1, 10);
+        await this.saveLatestEpisodes(latestEpisodes);
+        console.log('Scheduled latest episodes batch scrape completed successfully');
+      } catch (error) {
+        console.error('Scheduled latest episodes batch scrape failed:', error);
+      }
+    });
+    
     // Initial scrape
     await this.scrapeAll();
     
@@ -51,6 +63,16 @@ class SamehadakuScraper {
       console.log('Initial anime list scraping completed successfully');
     } catch (error) {
       console.error('Initial anime list scraping failed:', error);
+    }
+    
+    // Initial latest episodes batch scrape
+    console.log('Starting initial latest episodes batch scraping...');
+    try {
+      const latestEpisodes = await this.scrapeLatestEpisodesBatch(1, 10);
+      await this.saveLatestEpisodes(latestEpisodes);
+      console.log('Initial latest episodes batch scraping completed successfully');
+    } catch (error) {
+      console.error('Initial latest episodes batch scraping failed:', error);
     }
   }
 
@@ -1711,6 +1733,145 @@ class SamehadakuScraper {
       
     } catch (error) {
       console.error('Error in batch scraping:', error);
+      throw error;
+    }
+  }
+
+  async scrapeLatestEpisodesBatch(startPage = 1, endPage = 10) {
+    console.log(`Starting latest episodes batch scraping from page ${startPage} to ${endPage}...`);
+    
+    const allLatestEpisodes = [];
+    let successfulPages = 0;
+    
+    try {
+      for (let currentPage = startPage; currentPage <= endPage; currentPage++) {
+        console.log(`\n=== Latest Episodes Batch Scraping page ${currentPage}/${endPage} ===`);
+        
+        const pageUrl = currentPage === 1 
+          ? `${this.baseUrl}anime-terbaru/`
+          : `${this.baseUrl}anime-terbaru/page/${currentPage}/`;
+        
+        console.log(`URL: ${pageUrl}`);
+        
+        try {
+          const response = await axios.get(pageUrl, {
+            timeout: 45000, // Increased timeout for production
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+          });
+
+          const $ = cheerio.load(response.data);
+          
+          // Find latest episode entries based on the HTML structure
+          const episodeEntries = $('li');
+          let pageEpisodes = [];
+          
+          episodeEntries.each((index, element) => {
+            const $el = $(element);
+            const titleElement = $el.find('h2');
+            
+            if (titleElement.length > 0) {
+              const title = titleElement.text().trim();
+              const link = $el.find('a').attr('href');
+              
+              // Extract episode information
+              const episodeText = $el.text();
+              const episodeMatch = episodeText.match(/Episode\s+(\d+)/i);
+              const episodeNumber = episodeMatch ? episodeMatch[1] : null;
+              
+              // Extract posted by information
+              const postedMatch = episodeText.match(/Posted by:\s*([^\n]+)/i);
+              const postedBy = postedMatch ? postedMatch[1].trim() : null;
+              
+              // Extract release time
+              const releasedMatch = episodeText.match(/Released on:\s*([^\n]+)/i);
+              const releasedOn = releasedMatch ? releasedMatch[1].trim() : null;
+              
+              if (title && link) {
+                const episodeId = this.generateId(`${title}-episode-${episodeNumber}`);
+                
+                pageEpisodes.push({
+                  id: episodeId,
+                  title: title,
+                  episodeNumber: episodeNumber,
+                  link: this.resolveUrl(link),
+                  postedBy: postedBy,
+                  releasedOn: releasedOn,
+                  animeId: this.generateId(title),
+                  image: this.getAnimeImageSync(title),
+                  episodeScreenshot: null, // Will be populated later
+                  createdAt: new Date().toISOString(),
+                  pageNumber: currentPage
+                });
+              }
+            }
+          });
+
+          if (pageEpisodes.length === 0) {
+            console.log(`No episode entries found on page ${currentPage}, stopping batch...`);
+            break;
+          }
+          
+          console.log(`Found ${pageEpisodes.length} episode entries on page ${currentPage}`);
+          successfulPages++;
+          
+          // Get episode screenshots for each anime on this page
+          for (let i = 0; i < pageEpisodes.length; i++) {
+            const episode = pageEpisodes[i];
+            try {
+              // Use the same image as screenshot for now
+              pageEpisodes[i].episodeScreenshot = episode.image;
+              console.log(`✅ Set screenshot for ${episode.title} Episode ${episode.episodeNumber}`);
+            } catch (error) {
+              console.log(`❌ Failed to set screenshot for ${episode.title}: ${error.message}`);
+            }
+          }
+
+          // Add episodes from this page to the main array
+          allLatestEpisodes.push(...pageEpisodes);
+          console.log(`Added ${pageEpisodes.length} episodes from page ${currentPage}`);
+          
+          // Add longer delay between pages for production
+          if (currentPage < endPage) {
+            console.log('Waiting 2 seconds before next page...');
+            await this.delay(2000);
+          }
+          
+        } catch (error) {
+          console.error(`Error accessing page ${currentPage}:`, error.message);
+          // Continue with next page instead of breaking
+          continue;
+        }
+      }
+      
+      console.log(`✅ Latest episodes batch scraping completed! Total episodes found: ${allLatestEpisodes.length} from ${successfulPages} pages`);
+      return allLatestEpisodes;
+      
+    } catch (error) {
+      console.error('Error in latest episodes batch scraping:', error);
+      throw error;
+    }
+  }
+
+  async saveLatestEpisodes(latestEpisodes) {
+    try {
+      const latestEpisodesFile = process.env.LATEST_EPISODES_FILE || './data/latest-episodes.json';
+      
+      const data = {
+        latestEpisodes: latestEpisodes,
+        totalEpisodes: latestEpisodes.length,
+        lastUpdated: new Date().toISOString(),
+        source: `${this.baseUrl}anime-terbaru/`
+      };
+      
+      await fs.writeJson(latestEpisodesFile, data, { spaces: 2 });
+      console.log(`✅ Latest episodes saved to: ${latestEpisodesFile}`);
+      console.log(`Total episodes saved: ${latestEpisodes.length}`);
+      
+      return data;
+    } catch (error) {
+      console.error('Error saving latest episodes:', error);
       throw error;
     }
   }

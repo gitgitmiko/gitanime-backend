@@ -11,12 +11,14 @@ const isProduction = process.env.NODE_ENV === 'production';
 const DATA_FILE = isProduction ? '/tmp/anime-data.json' : './data/anime-data.json';
 const CONFIG_FILE = isProduction ? '/tmp/config.json' : './data/config.json';
 const ANIME_LIST_FILE = isProduction ? '/tmp/anime-list.json' : './data/anime-list.json';
+const LATEST_EPISODES_FILE = isProduction ? '/tmp/latest-episodes.json' : './data/latest-episodes.json';
 
 // Set environment variables for scraper to use the same file paths
 if (isProduction) {
   process.env.DATA_FILE = DATA_FILE;
   process.env.CONFIG_FILE = CONFIG_FILE;
   process.env.ANIME_LIST_FILE = ANIME_LIST_FILE;
+  process.env.LATEST_EPISODES_FILE = LATEST_EPISODES_FILE;
 }
 
 // Import scraper after setting environment variables
@@ -116,6 +118,15 @@ if (isProduction) {
         totalAnime: 0,
         lastUpdated: new Date().toISOString(),
         source: 'https://v1.samehadaku.how/daftar-anime-2/'
+      });
+    }
+    
+    if (!fs.existsSync(LATEST_EPISODES_FILE)) {
+      fs.writeJsonSync(LATEST_EPISODES_FILE, {
+        latestEpisodes: [],
+        totalEpisodes: 0,
+        lastUpdated: new Date().toISOString(),
+        source: 'https://v1.samehadaku.how/anime-terbaru/'
       });
     }
   } catch (error) {
@@ -498,6 +509,118 @@ app.get('/api/anime-list', async (req, res) => {
   }
 });
 
+// Get latest episodes with pagination (for homepage)
+app.get('/api/latest-episodes', async (req, res) => {
+  try {
+    const { page = 1, limit = 20, search = '', forceRefresh = false } = req.query;
+    const latestEpisodesFile = process.env.LATEST_EPISODES_FILE || './data/latest-episodes.json';
+    
+    // Check if we should force refresh or if file doesn't exist
+    let shouldScrape = forceRefresh === 'true';
+    
+    if (!shouldScrape) {
+      try {
+        const exists = await fs.pathExists(latestEpisodesFile);
+        if (!exists) {
+          shouldScrape = true;
+        } else {
+          // Check if file is older than 24 hours
+          const stats = await fs.stat(latestEpisodesFile);
+          const hoursSinceUpdate = (Date.now() - stats.mtime.getTime()) / (1000 * 60 * 60);
+          if (hoursSinceUpdate > 24) {
+            shouldScrape = true;
+          }
+        }
+      } catch (error) {
+        shouldScrape = true;
+      }
+    }
+    
+    let episodesData;
+    
+    if (shouldScrape) {
+      console.log('Scraping fresh latest episodes...');
+      // Use batch scraping for better production performance
+      const latestEpisodes = await scraper.scrapeLatestEpisodesBatch(1, 10);
+      episodesData = await scraper.saveLatestEpisodes(latestEpisodes);
+    } else {
+      console.log('Loading existing latest episodes...');
+      episodesData = await fs.readJson(latestEpisodesFile);
+    }
+    
+    let filteredEpisodes = episodesData.latestEpisodes || [];
+    
+    // Search functionality
+    if (search) {
+      filteredEpisodes = filteredEpisodes.filter(episode => 
+        episode.title.toLowerCase().includes(search.toLowerCase()) ||
+        (episode.postedBy && episode.postedBy.toLowerCase().includes(search.toLowerCase()))
+      );
+    }
+    
+    // Pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + parseInt(limit);
+    const paginatedEpisodes = filteredEpisodes.slice(startIndex, endIndex);
+    
+    res.json({
+      success: true,
+      data: {
+        episodes: paginatedEpisodes,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(filteredEpisodes.length / limit),
+          totalItems: filteredEpisodes.length,
+          itemsPerPage: parseInt(limit)
+        },
+        summary: {
+          totalEpisodes: episodesData.totalEpisodes,
+          lastUpdated: episodesData.lastUpdated,
+          source: episodesData.source
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching latest episodes:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch latest episodes' 
+    });
+  }
+});
+
+// Manual latest episodes scraping trigger (admin only)
+app.post('/api/scrape-latest-episodes', async (req, res) => {
+  try {
+    const { password } = req.body;
+    
+    if (password !== process.env.ADMIN_PASSWORD) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    console.log('Manual latest episodes scraping triggered');
+    // Use batch scraping for better production performance
+    const latestEpisodes = await scraper.scrapeLatestEpisodesBatch(1, 10);
+    const result = await scraper.saveLatestEpisodes(latestEpisodes);
+    
+    res.json({ 
+      success: true,
+      message: 'Latest episodes scraping completed successfully',
+      data: {
+        totalEpisodes: result.totalEpisodes,
+        lastUpdated: result.lastUpdated,
+        pagesScraped: '1-10'
+      }
+    });
+  } catch (error) {
+    console.error('Error during latest episodes scraping:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to scrape latest episodes' 
+    });
+  }
+});
+
 // Manual anime list scraping trigger (admin only)
 app.post('/api/scrape-anime-list', async (req, res) => {
   try {
@@ -593,6 +716,40 @@ app.post('/api/scrape-anime-list-batch', async (req, res) => {
     res.status(500).json({ 
       success: false, 
       error: 'Failed to scrape anime list',
+      details: error.message 
+    });
+  }
+});
+
+// Test batch latest episodes scraping with specific page range (admin only)
+app.post('/api/scrape-latest-episodes-batch', async (req, res) => {
+  try {
+    const { password, startPage = 1, endPage = 10 } = req.body;
+    
+    if (password !== process.env.ADMIN_PASSWORD) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    console.log(`Manual batch latest episodes scraping triggered: pages ${startPage}-${endPage}`);
+    
+    // Use batch scraping with specified range
+    const latestEpisodes = await scraper.scrapeLatestEpisodesBatch(parseInt(startPage), parseInt(endPage));
+    const result = await scraper.saveLatestEpisodes(latestEpisodes);
+    
+    res.json({ 
+      success: true,
+      message: `Latest episodes batch scraping completed successfully for pages ${startPage}-${endPage}`,
+      data: {
+        totalEpisodes: result.totalEpisodes,
+        lastUpdated: result.lastUpdated,
+        pagesScraped: `${startPage}-${endPage}`
+      }
+    });
+  } catch (error) {
+    console.error('Error in batch latest episodes scraping:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: 'Failed to scrape latest episodes',
       details: error.message 
     });
   }

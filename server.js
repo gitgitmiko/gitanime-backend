@@ -151,6 +151,27 @@ app.get('/api/debug', async (req, res) => {
   }
 });
 
+// Raw data endpoint for debugging
+app.get('/api/raw-data', async (req, res) => {
+  try {
+    const dataExists = await fs.pathExists(DATA_FILE);
+    
+    if (!dataExists) {
+      return res.json({ error: 'Data file does not exist' });
+    }
+    
+    const data = await fs.readJson(DATA_FILE);
+    res.json({
+      status: 'OK',
+      filePath: DATA_FILE,
+      data: data
+    });
+  } catch (error) {
+    console.error('Error in raw data endpoint:', error);
+    res.status(500).json({ error: 'Failed to get raw data' });
+  }
+});
+
 // Get all anime
 app.get('/api/anime', async (req, res) => {
   try {

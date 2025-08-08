@@ -61,6 +61,8 @@ class SamehadakuScraper {
 
     this.isScraping = true;
     console.log('Starting scraping process...');
+    console.log(`Using data file: ${this.dataFile}`);
+    console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 
     try {
       // Scrape latest episodes first
@@ -88,6 +90,15 @@ class SamehadakuScraper {
 
       await fs.writeJson(this.dataFile, data, { spaces: 2 });
       console.log(`Scraping completed: ${latestEpisodes.length} latest episodes`);
+      console.log(`Data saved to: ${this.dataFile}`);
+      console.log(`Total episodes in data: ${allEpisodes.length}`);
+      console.log(`Data structure:`, {
+        anime: data.anime.length,
+        episodes: data.episodes.length,
+        latestEpisodes: data.latestEpisodes.length,
+        totalAnime: data.totalAnime,
+        totalEpisodes: data.totalEpisodes
+      });
     } catch (error) {
       console.error('Error during scraping:', error);
     } finally {

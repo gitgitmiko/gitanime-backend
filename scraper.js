@@ -1430,7 +1430,7 @@ class SamehadakuScraper {
         const $ = cheerio.load(response.data);
         
         // Find all anime entries
-        const animeEntries = $('.anime-list .anime-item, .daftar-anime .anime-item, .anime-grid .anime-item');
+        const animeEntries = $('article.animpost');
         
         if (animeEntries.length === 0) {
           console.log(`No anime entries found on page ${currentPage}, stopping...`);
@@ -1444,7 +1444,7 @@ class SamehadakuScraper {
           
           try {
             // Extract anime information
-            const titleElement = entry.find('h3, h4, .anime-title, .title');
+            const titleElement = entry.find('.data .title h2');
             const title = titleElement.text().trim();
             
             if (!title) {
@@ -1453,37 +1453,37 @@ class SamehadakuScraper {
             }
             
             // Extract link
-            const linkElement = entry.find('a').first();
+            const linkElement = entry.find('.animposx a').first();
             const link = linkElement.attr('href');
             const fullLink = link ? this.resolveUrl(link) : null;
             
             // Extract image
-            const imgElement = entry.find('img').first();
+            const imgElement = entry.find('.content-thumb img.anmsa').first();
             const imageUrl = imgElement.attr('src') || imgElement.attr('data-src');
             const fullImageUrl = imageUrl ? this.resolveImageUrl(imageUrl) : null;
             
             // Extract rating/score
-            const ratingElement = entry.find('.rating, .score, .anime-rating');
+            const ratingElement = entry.find('.score');
             const rating = ratingElement.text().trim();
             
             // Extract status (ongoing/completed)
-            const statusElement = entry.find('.status, .anime-status');
+            const statusElement = entry.find('.data .type');
             const status = statusElement.text().trim();
             
             // Extract type (TV, Movie, OVA, etc.)
-            const typeElement = entry.find('.type, .anime-type');
+            const typeElement = entry.find('.content-thumb .type');
             const type = typeElement.text().trim();
             
             // Extract genres
-            const genreElements = entry.find('.genre, .anime-genre');
+            const genreElements = entry.find('.stooltip .genres .mta a');
             const genres = genreElements.map((index, element) => $(element).text().trim()).get();
             
             // Extract description/synopsis
-            const descElement = entry.find('.description, .synopsis, .anime-desc');
+            const descElement = entry.find('.stooltip .ttls');
             const description = descElement.text().trim();
             
             // Extract episode count or other info
-            const episodeElement = entry.find('.episode-count, .episodes');
+            const episodeElement = entry.find('.metadata span:last-child');
             const episodeInfo = episodeElement.text().trim();
             
             const animeData = {

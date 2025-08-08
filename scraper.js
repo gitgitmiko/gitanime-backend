@@ -1412,6 +1412,9 @@ class SamehadakuScraper {
     let currentPage = 1;
     const maxPages = 10; // Scrape up to page 10 as requested
     
+    // Track successful pages
+    let successfulPages = 0;
+    
     try {
       while (currentPage <= maxPages) {
         console.log(`\n=== Scraping page ${currentPage}/${maxPages} ===`);
@@ -1440,9 +1443,11 @@ class SamehadakuScraper {
             break;
           }
           
-          console.log(`Found ${animeEntries.length} anime entries on page ${currentPage}`);
-          
-          for (let i = 0; i < animeEntries.length; i++) {
+                  console.log(`Found ${animeEntries.length} anime entries on page ${currentPage}`);
+        
+        successfulPages++;
+        
+        for (let i = 0; i < animeEntries.length; i++) {
             const entry = $(animeEntries[i]);
             
             try {
@@ -1531,7 +1536,7 @@ class SamehadakuScraper {
         }
       }
       
-      console.log(`✅ Anime list scraping completed! Total anime found: ${allAnime.length}`);
+      console.log(`✅ Anime list scraping completed! Total anime found: ${allAnime.length} from ${successfulPages} pages`);
       return allAnime;
       
     } catch (error) {

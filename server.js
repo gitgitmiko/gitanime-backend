@@ -32,7 +32,9 @@ const corsOptions = {
       'https://frontend-alpha-nine-27.vercel.app',
       // Tambahkan domain Render.com untuk development
       'https://gitanime-backend.onrender.com',
-      'https://gitanime-backend-dev.onrender.com'
+      'https://gitanime-backend-dev.onrender.com',
+      // Tambahkan domain frontend utama
+      'https://gitanime-web.vercel.app'
     ];
     
     // Log origin untuk debugging

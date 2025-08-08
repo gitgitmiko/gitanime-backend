@@ -1520,8 +1520,8 @@ class SamehadakuScraper {
           }
         }
         
-        // For now, let's try to access pages 2-10 explicitly
-        // since pagination detection might not be working correctly
+        // Check if we should continue to next page
+        // Since we know pages 2-10 exist, just continue until maxPages
         currentPage++;
         console.log(`Moving to page ${currentPage}...`);
         

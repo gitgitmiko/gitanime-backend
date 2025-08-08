@@ -250,6 +250,11 @@ class SamehadakuScraper {
   async scrapeAnimeDetail(animeUrl) {
     console.log(`Scraping anime detail from: ${animeUrl}`);
     
+    // Check if this is an episode URL
+    if (animeUrl.includes('episode')) {
+      return await this.scrapeEpisodeDetail(animeUrl);
+    }
+    
     try {
       const response = await axios.get(animeUrl, {
         timeout: 30000,
@@ -362,6 +367,80 @@ class SamehadakuScraper {
       return animeDetail;
     } catch (error) {
       console.error('Error scraping anime detail:', error);
+      return null;
+    }
+  }
+
+  async scrapeEpisodeDetail(episodeUrl) {
+    console.log(`Scraping episode detail from: ${episodeUrl}`);
+    
+    try {
+      const response = await axios.get(episodeUrl, {
+        timeout: 30000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+
+      const $ = cheerio.load(response.data);
+      
+      // Extract episode title
+      const title = $('h1').first().text().trim().replace('Sub Indo', '').trim();
+      
+      // Extract episode information
+      const postedBy = $('strong:contains("Posted By")').parent().text().replace('Posted By', '').trim();
+      const releasedOn = $('strong:contains("Released On")').parent().text().replace('Released On', '').trim();
+      
+      // Extract episode number from URL
+      const episodeMatch = episodeUrl.match(/episode-(\d+)/i);
+      const episodeNumber = episodeMatch ? episodeMatch[1] : null;
+      
+      // Extract anime title from URL
+      const animeTitle = this.extractEpisodeTitleFromUrl(episodeUrl);
+      
+      // Extract image
+      let image = null;
+      $('img').each((index, element) => {
+        const $img = $(element);
+        const src = $img.attr('src');
+        const alt = $img.attr('alt') || '';
+        
+        if (src && 
+            !src.includes('avatar') && 
+            !src.includes('logo') && 
+            !src.includes('icon') &&
+            !src.includes('wp-content') &&
+            (alt.toLowerCase().includes('anime') || 
+             alt.toLowerCase().includes('cover') || 
+             alt.toLowerCase().includes('poster') ||
+             src.includes('.jpg') || 
+             src.includes('.jpeg') || 
+             src.includes('.png'))) {
+          image = src;
+          console.log(`Found episode image: ${src} (alt: ${alt})`);
+          return false; // Break the loop
+        }
+      });
+
+      // Get anime image from mapping
+      const animeImage = this.getAnimeImageSync(animeTitle);
+
+      const episodeDetail = {
+        title: animeTitle,
+        episodeNumber: episodeNumber,
+        episodeTitle: title,
+        postedBy: postedBy,
+        releasedOn: releasedOn,
+        episodeUrl: episodeUrl,
+        animeUrl: episodeUrl.replace(/episode-\d+.*$/, ''), // Remove episode part to get anime URL
+        imageUrl: animeImage || (image ? this.resolveImageUrl(image) : null),
+        id: this.generateId(`${animeTitle}-episode-${episodeNumber}`)
+      };
+
+      console.log(`Found episode detail: ${animeTitle} Episode ${episodeNumber}`);
+      return episodeDetail;
+    } catch (error) {
+      console.error('Error scraping episode detail:', error);
       return null;
     }
   }

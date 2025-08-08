@@ -714,18 +714,22 @@ class SamehadakuScraper {
   }
 
   async scrapeEpisodeVideo(episodeUrl) {
-    console.log(`Scraping video from episode: ${episodeUrl}`);
+    console.log(`🎬 Scraping video from episode: ${episodeUrl}`);
     
     try {
       const response = await axios.get(episodeUrl, {
-        timeout: 30000,
+        timeout: 60000, // Increased timeout to 60 seconds
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Accept-Encoding': 'gzip, deflate',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
           'Connection': 'keep-alive',
-          'Upgrade-Insecure-Requests': '1'
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+          'Cache-Control': 'max-age=0'
         }
       });
 
@@ -733,14 +737,13 @@ class SamehadakuScraper {
       
       // Debug: Log the page title to confirm we're on the right page
       const pageTitle = $('title').text();
-      console.log(`Page title: ${pageTitle}`);
+      console.log(`📄 Page title: ${pageTitle}`);
       
       // Debug: Log all video-related elements found
-      console.log(`Found ${$('video').length} video elements`);
-      console.log(`Found ${$('iframe').length} iframe elements`);
-      console.log(`Found ${$('embed').length} embed elements`);
-      console.log(`Found ${$('object').length} object elements`);
-      console.log(`Found ${$('script').length} script elements`);
+      console.log(`🔍 Found ${$('video').length} video elements`);
+      console.log(`🔍 Found ${$('iframe').length} iframe elements`);
+      console.log(`🔍 Found ${$('embed').length} embed elements`);
+      console.log(`🔍 Found ${$('script').length} script elements`);
       
       // Look for video sources
       let videoUrl = null;
@@ -754,7 +757,7 @@ class SamehadakuScraper {
         const text = $el.text().trim();
         const className = $el.attr('class') || '';
         
-        console.log(`Checking player option ${id}: text="${text}" class="${className}"`);
+        console.log(`🎮 Checking player option ${id}: text="${text}" class="${className}"`);
         
         playerOptions.push({
           id: id,
@@ -764,35 +767,41 @@ class SamehadakuScraper {
         });
       });
 
-      // Extract post ID from the page
+      // Enhanced Post ID extraction with multiple methods
       let postId = null;
       
       // Method 1: Look for hidden input
       postId = $('input[name="post_id"]').val();
       if (postId) {
-        console.log(`Found post ID from input: ${postId}`);
+        console.log(`✅ Found post ID from input: ${postId}`);
       }
       
-      // Method 2: Look for post ID in script tags
+      // Method 2: Look for post ID in script tags with enhanced patterns
       if (!postId) {
         $('script').each((index, element) => {
           const scriptContent = $(element).html();
           if (scriptContent) {
-            // Multiple patterns to find post ID
+            // Enhanced patterns to find post ID
             const patterns = [
               /var\s+post_id\s*=\s*['"]?(\d+)['"]?/i,
               /"post"\s*:\s*['"]?(\d+)['"]?/i,
               /post_id\s*=\s*['"]?(\d+)['"]?/i,
               /post\s*:\s*['"]?(\d+)['"]?/i,
               /id\s*:\s*['"]?(\d+)['"]?/i,
-              /episode_id\s*=\s*['"]?(\d+)['"]?/i
+              /episode_id\s*=\s*['"]?(\d+)['"]?/i,
+              /postId\s*=\s*['"]?(\d+)['"]?/i,
+              /postID\s*=\s*['"]?(\d+)['"]?/i,
+              /"id"\s*:\s*(\d+)/i,
+              /'id'\s*:\s*(\d+)/i,
+              /post\s*=\s*(\d+)/i,
+              /post_id\s*:\s*(\d+)/i
             ];
             
             for (const pattern of patterns) {
               const match = scriptContent.match(pattern);
               if (match) {
                 postId = match[1];
-                console.log(`Found post ID from script pattern: ${postId}`);
+                console.log(`✅ Found post ID from script pattern: ${postId}`);
                 return false;
               }
             }
@@ -805,7 +814,7 @@ class SamehadakuScraper {
         const metaPostId = $('meta[name="post_id"]').attr('content');
         if (metaPostId) {
           postId = metaPostId;
-          console.log(`Found post ID from meta tag: ${postId}`);
+          console.log(`✅ Found post ID from meta tag: ${postId}`);
         }
       }
       
@@ -814,457 +823,212 @@ class SamehadakuScraper {
         const dataPostId = $('[data-post-id]').attr('data-post-id');
         if (dataPostId) {
           postId = dataPostId;
-          console.log(`Found post ID from data attribute: ${postId}`);
+          console.log(`✅ Found post ID from data attribute: ${postId}`);
         }
       }
       
-      // Method 5: Try to extract from URL (fallback)
+      // Method 5: Try to extract from URL (enhanced)
       if (!postId) {
-        console.log('❌ Could not find post ID on the page, trying URL extraction...');
-        const urlMatch = episodeUrl.match(/\/(\d+)\/?$/);
-        if (urlMatch) {
-          postId = urlMatch[1];
-          console.log(`Extracted post ID from URL: ${postId}`);
+        console.log('🔍 Could not find post ID on the page, trying URL extraction...');
+        const urlPatterns = [
+          /\/(\d+)\/?$/,
+          /\/(\d+)-/,
+          /-(\d+)\/?$/,
+          /episode-(\d+)/,
+          /anime\/(\d+)/,
+          /post\/(\d+)/,
+          /id=(\d+)/,
+          /p=(\d+)/
+        ];
+        
+        for (const pattern of urlPatterns) {
+          const urlMatch = episodeUrl.match(pattern);
+          if (urlMatch) {
+            postId = urlMatch[1];
+            console.log(`✅ Extracted post ID from URL pattern: ${postId}`);
+            break;
+          }
         }
       }
       
-      // Method 6: Try to find any number that could be post ID in the page
+      // Method 6: Try to find any number that could be post ID in the page (enhanced)
       if (!postId) {
         const htmlContent = $.html();
-        const numberMatches = htmlContent.match(/(\d{4,6})/g);
+        const numberMatches = htmlContent.match(/(\d{4,8})/g);
         if (numberMatches && numberMatches.length > 0) {
-          // Try the first 4-6 digit number as post ID
-          postId = numberMatches[0];
-          console.log(`Using first number found as post ID: ${postId}`);
+          // Filter out common non-post ID numbers
+          const filteredNumbers = numberMatches.filter(num => {
+            const numInt = parseInt(num);
+            return numInt > 1000 && numInt < 99999999; // Reasonable range for post IDs
+          });
+          
+          if (filteredNumbers.length > 0) {
+            postId = filteredNumbers[0];
+            console.log(`✅ Using filtered number as post ID: ${postId}`);
+          }
         }
       }
       
-      console.log(`Detected Post ID: ${postId}`);
+      console.log(`🎯 Final Post ID: ${postId}`);
 
-      // Try to get video URLs by calling the admin-ajax.php API for each player option
-      console.log('\n🔍 Trying to fetch video URLs from admin-ajax.php API...');
+      // Enhanced API call with retry mechanism
+      console.log('\n🚀 Trying to fetch video URLs from admin-ajax.php API...');
       
       for (let i = 0; i < playerOptions.length; i++) {
         const option = playerOptions[i];
         const nume = i + 1; // nume is 1-based index
-        try {
-          const apiVideoUrl = await this.fetchVideoFromAPI(episodeUrl, postId, nume, option.id, option.text);
-          if (apiVideoUrl) {
-            playerOptions[i].videoUrl = apiVideoUrl;
-            console.log(`✅ Found video URL for ${option.text}: ${apiVideoUrl}`);
-            
-            // Set the first found video as the main video
-            if (!videoUrl) {
-              videoUrl = apiVideoUrl;
-              videoType = 'api_fetch';
+        
+        // Try multiple times for each player option
+        for (let retry = 0; retry < 3; retry++) {
+          try {
+            console.log(`🔄 Attempt ${retry + 1}/3 for ${option.text}...`);
+            const apiVideoUrl = await this.fetchVideoFromAPI(episodeUrl, postId, nume, option.id, option.text);
+            if (apiVideoUrl) {
+              playerOptions[i].videoUrl = apiVideoUrl;
+              console.log(`✅ Found video URL for ${option.text}: ${apiVideoUrl}`);
+              
+              // Set the first found video as the main video
+              if (!videoUrl) {
+                videoUrl = apiVideoUrl;
+                videoType = 'api_fetch';
+              }
+              break; // Success, no need to retry
+            }
+          } catch (error) {
+            console.log(`❌ Attempt ${retry + 1} failed for ${option.text}: ${error.message}`);
+            if (retry < 2) {
+              await this.delay(2000); // Wait 2 seconds before retry
             }
           }
-        } catch (error) {
-          console.log(`❌ Failed to fetch video for ${option.text}: ${error.message}`);
         }
       }
       
-      // Method 2: Check for direct video elements with src attribute
+      // Enhanced fallback methods if API calls fail
       if (!videoUrl) {
+        console.log('\n🔄 API calls failed, trying fallback methods...');
+        
+        // Method 1: Check for direct video elements with src attribute
         $('video').each((index, element) => {
           const $video = $(element);
           const src = $video.attr('src');
           if (src) {
             videoUrl = src;
             videoType = 'direct_video';
-            console.log(`Found direct video: ${src}`);
-            return false; // Break the loop
+            console.log(`✅ Found direct video: ${src}`);
+            return false;
           }
         });
       }
       
-      // Method 3: Check for video elements with source tags
+      // Method 2: Check for video elements with source tags
       if (!videoUrl) {
         $('video source').each((index, element) => {
           const src = $(element).attr('src');
           if (src) {
             videoUrl = src;
             videoType = 'video_source';
-            console.log(`Found video source: ${src}`);
+            console.log(`✅ Found video source: ${src}`);
             return false;
           }
         });
       }
       
-      // Method 4: Check for data attributes
+      // Method 3: Enhanced iframe checking
       if (!videoUrl) {
-        $('[data-video], [data-src], [data-url]').each((index, element) => {
-          const video = $(element).attr('data-video') || 
-                       $(element).attr('data-src') || 
-                       $(element).attr('data-url');
-          if (video) {
-            videoUrl = video;
-            videoType = 'data';
-            console.log(`Found data video: ${video}`);
-            return false;
-          }
-        });
-      }
-
-      // Method 5: Check for script tags with video URLs
-      if (!videoUrl) {
-        $('script').each((index, element) => {
-          const scriptContent = $(element).html();
-          if (scriptContent) {
-            // Look for direct video URLs in scripts
-            const videoMatch = scriptContent.match(/(https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))/i);
-            if (videoMatch) {
-              videoUrl = videoMatch[1];
-              videoType = 'script';
-              console.log(`Found script video: ${videoUrl}`);
+        $('iframe').each((index, element) => {
+          const $iframe = $(element);
+          const src = $iframe.attr('src');
+          
+          if (src) {
+            // Check for wibufile.com URLs
+            if (src.includes('wibufile.com')) {
+              videoUrl = src;
+              videoType = 'iframe_wibufile';
+              console.log(`✅ Found wibufile iframe: ${src}`);
+              return false;
+            }
+            
+            // Check for other video hosting services
+            if (src.includes('.mp4') || src.includes('video') || src.includes('player')) {
+              videoUrl = src;
+              videoType = 'iframe_video';
+              console.log(`✅ Found video iframe: ${src}`);
               return false;
             }
           }
         });
       }
-
-      // Method 6: Look for video URLs in the entire HTML content
-      if (!videoUrl) {
-        const htmlContent = $.html();
-        
-        // Look for direct video URLs in HTML
-        const videoMatches = htmlContent.match(/(https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))/gi);
-        if (videoMatches && videoMatches.length > 0) {
-          videoUrl = videoMatches[0];
-          videoType = 'html_video';
-          console.log(`Found video in HTML: ${videoUrl}`);
-        }
-      }
-
-      // Method 7: Look for video URLs in all script tags (more thorough)
+      
+      // Method 4: Enhanced script tag checking
       if (!videoUrl) {
         $('script').each((index, element) => {
           const scriptContent = $(element).html();
           if (scriptContent) {
-            // Look for video URLs in script content
+            // Look for wibufile.com URLs specifically
+            const wibufileMatches = scriptContent.match(/(https?:\/\/[^"'\s]*wibufile\.com[^"'\s]*\.mp4[^"'\s]*)/gi);
+            if (wibufileMatches && wibufileMatches.length > 0) {
+              videoUrl = wibufileMatches[0];
+              videoType = 'script_wibufile';
+              console.log(`✅ Found wibufile in script: ${videoUrl}`);
+              return false;
+            }
+            
+            // Look for other video URLs
             const videoMatches = scriptContent.match(/(https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))/gi);
             if (videoMatches && videoMatches.length > 0) {
               videoUrl = videoMatches[0];
               videoType = 'script_video';
-              console.log(`Found video in script ${index + 1}: ${videoUrl}`);
-              return false; // Break the loop
+              console.log(`✅ Found video in script: ${videoUrl}`);
+              return false;
             }
           }
         });
       }
-
-      // Method 8: Look for video URLs in data attributes or specific patterns
+      
+      // Method 5: Enhanced HTML content checking
       if (!videoUrl) {
         const htmlContent = $.html();
         
-        // Look for video URLs in data attributes
-        const dataVideoMatches = htmlContent.match(/data-video="([^"]+)"/i);
-        if (dataVideoMatches) {
-          videoUrl = dataVideoMatches[1];
-          videoType = 'data_video';
-          console.log(`Found data-video: ${videoUrl}`);
-        }
-        
-        // Look for video URLs in src attributes
-        if (!videoUrl) {
-          const srcVideoMatches = htmlContent.match(/src="([^"]*(?:\.mp4|\.m3u8|\.webm|\.ogg)[^"]*)"/i);
-          if (srcVideoMatches) {
-            videoUrl = srcVideoMatches[1];
-            videoType = 'src_video';
-            console.log(`Found src video: ${videoUrl}`);
-          }
-        }
-      }
-
-      // Method 9: Look for video URLs in specific Samehadaku patterns
-      if (!videoUrl) {
-        const htmlContent = $.html();
-        
-        // Look for wibufile.com URLs (Samehadaku specific) - but exclude chat and js files
-        const wibufileMatches = htmlContent.match(/(https?:\/\/[^"'\s]*wibufile\.com[^"'\s]*(?:\.mp4|video)[^"'\s]*)/gi);
-        if (wibufileMatches && wibufileMatches.length > 0) {
-          videoUrl = wibufileMatches[0];
-          videoType = 'wibufile_video';
-          console.log(`Found wibufile video: ${videoUrl}`);
-        }
-        
-        // Look for googlevideo.com URLs
-        if (!videoUrl) {
-          const googleVideoMatches = htmlContent.match(/(https?:\/\/[^"'\s]*googlevideo\.com[^"'\s]*)/gi);
-          if (googleVideoMatches && googleVideoMatches.length > 0) {
-            videoUrl = googleVideoMatches[0];
-            videoType = 'google_video';
-            console.log(`Found Google video: ${videoUrl}`);
-          }
-        }
-      }
-
-      // Method 10: Look for video URLs in JavaScript variables or functions
-      if (!videoUrl) {
-        $('script').each((index, element) => {
-          const scriptContent = $(element).html();
-          if (scriptContent) {
-            // Look for video URLs in JavaScript variables
-            const jsVideoMatches = scriptContent.match(/["'](https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))["']/gi);
-            if (jsVideoMatches && jsVideoMatches.length > 0) {
-              videoUrl = jsVideoMatches[0].replace(/["']/g, '');
-              videoType = 'js_video';
-              console.log(`Found JS video: ${videoUrl}`);
-              return false; // Break the loop
-            }
-            
-            // Look for video URLs in JavaScript object properties
-            const jsObjMatches = scriptContent.match(/["']src["']\s*:\s*["'](https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))["']/gi);
-            if (jsObjMatches && jsObjMatches.length > 0) {
-              videoUrl = jsObjMatches[0].match(/["'](https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))["']/i)[1];
-              videoType = 'js_obj_video';
-              console.log(`Found JS object video: ${videoUrl}`);
-              return false; // Break the loop
-            }
-          }
-        });
-      }
-
-      // Method 11: Look for video URLs in links or buttons that might contain video
-      if (!videoUrl) {
-        $('a, button').each((index, element) => {
-          const $el = $(element);
-          const href = $el.attr('href');
-          const onclick = $el.attr('onclick');
-          const text = $el.text().toLowerCase();
-          
-          // Check if link contains video URL
-          if (href && (href.includes('.mp4') || href.includes('.m3u8') || href.includes('.webm') || href.includes('.ogg'))) {
-            videoUrl = href;
-            videoType = 'link_video';
-            console.log(`Found video link: ${videoUrl}`);
-            return false; // Break the loop
-          }
-          
-          // Check if button text suggests it's a video player
-          if (text.includes('play') || text.includes('video') || text.includes('watch') || text.includes('stream')) {
-            console.log(`Found potential video button: ${text}`);
-          }
-        });
-      }
-
-      // Method 12: Look for video URLs in the entire HTML content (case insensitive)
-      if (!videoUrl) {
-        const htmlContent = $.html();
-        
-        // Look for any URL that contains video-related keywords
-        const allVideoMatches = htmlContent.match(/(https?:\/\/[^"'\s]*(?:\.mp4|\.m3u8|\.webm|\.ogg|video|stream|player)[^"'\s]*)/gi);
-        if (allVideoMatches && allVideoMatches.length > 0) {
-          // Filter out non-video URLs
-          const filteredMatches = allVideoMatches.filter(url => 
-            url.includes('.mp4') || url.includes('.m3u8') || url.includes('.webm') || url.includes('.ogg')
-          );
-          if (filteredMatches.length > 0) {
-            videoUrl = filteredMatches[0];
-            videoType = 'html_all_video';
-            console.log(`Found video in HTML (filtered): ${videoUrl}`);
-          }
-        }
-      }
-
-      // Method 13: Look for video URLs in player options (Samehadaku specific)
-      if (!videoUrl) {
-        $('[id^="player-option-"]').each((index, element) => {
-          const $el = $(element);
-          const id = $el.attr('id');
-          const className = $el.attr('class') || '';
-          const text = $el.text().trim();
-          
-          console.log(`Checking player option ${id}: text="${text}" class="${className}"`);
-          
-          // Look for video URLs in the player option content
-          const optionContent = $el.html();
-          if (optionContent) {
-            const videoMatches = optionContent.match(/(https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))/gi);
-            if (videoMatches && videoMatches.length > 0) {
-              videoUrl = videoMatches[0];
-              videoType = 'player_option';
-              console.log(`Found video in player option ${id}: ${videoUrl}`);
-              return false; // Break the loop
-            }
-          }
-        });
-      }
-
-      // Method 14: Look for video URLs in player embed div
-      if (!videoUrl) {
-        const playerEmbed = $('#player_embed, #pembed, .player-embed');
-        if (playerEmbed.length > 0) {
-          const embedContent = playerEmbed.html();
-          console.log('Checking player embed content...');
-          
-          if (embedContent) {
-            const videoMatches = embedContent.match(/(https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))/gi);
-            if (videoMatches && videoMatches.length > 0) {
-              videoUrl = videoMatches[0];
-              videoType = 'player_embed';
-              console.log(`Found video in player embed: ${videoUrl}`);
-            }
-          }
-        }
-      }
-
-      // Method 15: Look for video URLs in all script tags (more thorough)
-      if (!videoUrl) {
-        $('script').each((index, element) => {
-          const scriptContent = $(element).html();
-          if (scriptContent) {
-            // Look for video URLs in script content
-            const videoMatches = scriptContent.match(/(https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))/gi);
-            if (videoMatches && videoMatches.length > 0) {
-              videoUrl = videoMatches[0];
-              videoType = 'script_video';
-              console.log(`Found video in script ${index + 1}: ${videoUrl}`);
-              return false; // Break the loop
-            }
-            
-            // Look for video URLs in JavaScript object properties
-            const jsObjMatches = scriptContent.match(/["']src["']\s*:\s*["'](https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))["']/gi);
-            if (jsObjMatches && jsObjMatches.length > 0) {
-              videoUrl = jsObjMatches[0].match(/["'](https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))["']/i)[1];
-              videoType = 'js_obj_video';
-              console.log(`Found JS object video in script ${index + 1}: ${videoUrl}`);
-              return false; // Break the loop
-            }
-          }
-        });
-      }
-
-      // Method 16: Look for video URLs in the entire HTML content (case insensitive)
-      if (!videoUrl) {
-        const htmlContent = $.html();
-        
-        // Look for wibufile.com URLs specifically (Samehadaku video hosting)
+        // Look for wibufile.com URLs specifically
         const wibufileMatches = htmlContent.match(/(https?:\/\/[^"'\s]*wibufile\.com[^"'\s]*\.mp4[^"'\s]*)/gi);
         if (wibufileMatches && wibufileMatches.length > 0) {
           videoUrl = wibufileMatches[0];
-          videoType = 'wibufile_mp4';
-          console.log(`Found wibufile MP4: ${videoUrl}`);
+          videoType = 'html_wibufile';
+          console.log(`✅ Found wibufile in HTML: ${videoUrl}`);
         }
         
-        // Look for any MP4 URLs
+        // Look for other video URLs
         if (!videoUrl) {
-          const mp4Matches = htmlContent.match(/(https?:\/\/[^"'\s]*\.mp4[^"'\s]*)/gi);
-          if (mp4Matches && mp4Matches.length > 0) {
-            videoUrl = mp4Matches[0];
-            videoType = 'html_mp4';
-            console.log(`Found MP4 in HTML: ${videoUrl}`);
+          const videoMatches = htmlContent.match(/(https?:\/\/[^"'\s]+\.(?:mp4|m3u8|webm|ogg))/gi);
+          if (videoMatches && videoMatches.length > 0) {
+            videoUrl = videoMatches[0];
+            videoType = 'html_video';
+            console.log(`✅ Found video in HTML: ${videoUrl}`);
           }
         }
       }
-
-      // Method 17: Look for video URLs in data attributes or hidden elements
-      if (!videoUrl) {
-        $('[data-video], [data-src], [data-url], [data-player]').each((index, element) => {
-          const $el = $(element);
-          const dataVideo = $el.attr('data-video');
-          const dataSrc = $el.attr('data-src');
-          const dataUrl = $el.attr('data-url');
-          const dataPlayer = $el.attr('data-player');
-          
-          if (dataVideo && (dataVideo.includes('.mp4') || dataVideo.includes('wibufile.com'))) {
-            videoUrl = dataVideo;
-            videoType = 'data_video';
-            console.log(`Found data-video: ${videoUrl}`);
-            return false;
-          }
-          
-          if (dataSrc && (dataSrc.includes('.mp4') || dataSrc.includes('wibufile.com'))) {
-            videoUrl = dataSrc;
-            videoType = 'data_src';
-            console.log(`Found data-src: ${videoUrl}`);
-            return false;
-          }
-          
-          if (dataUrl && (dataUrl.includes('.mp4') || dataUrl.includes('wibufile.com'))) {
-            videoUrl = dataUrl;
-            videoType = 'data_url';
-            console.log(`Found data-url: ${videoUrl}`);
-            return false;
-          }
-          
-          if (dataPlayer && (dataPlayer.includes('.mp4') || dataPlayer.includes('wibufile.com'))) {
-            videoUrl = dataPlayer;
-            videoType = 'data_player';
-            console.log(`Found data-player: ${videoUrl}`);
-            return false;
-          }
-        });
-      }
-
-      // Method 18: Look for video URLs in iframe src attributes (Samehadaku specific)
-      if (!videoUrl) {
-        $('iframe').each((index, element) => {
-          const $el = $(element);
-          const src = $el.attr('src');
-          
-          if (src && src.includes('wibufile.com') && src.includes('.mp4')) {
-            videoUrl = src;
-            videoType = 'iframe_wibufile';
-            console.log(`Found wibufile iframe: ${videoUrl}`);
-            return false;
-          }
-        });
-      }
-
-      // Method 19: Look for video URLs in the entire HTML content (case insensitive) - more specific
-      if (!videoUrl) {
-        const htmlContent = $.html();
-        
-        // Look for wibufile.com URLs with MP4 extension specifically
-        const wibufileMp4Matches = htmlContent.match(/(https?:\/\/[^"'\s]*wibufile\.com[^"'\s]*\.mp4[^"'\s]*)/gi);
-        if (wibufileMp4Matches && wibufileMp4Matches.length > 0) {
-          videoUrl = wibufileMp4Matches[0];
-          videoType = 'wibufile_mp4_html';
-          console.log(`Found wibufile MP4 in HTML: ${videoUrl}`);
-        }
-      }
-
-      // Method 20: Look for video URLs in all script tags (more thorough) - limited to first 10
-      if (!videoUrl) {
-        $('script').each((index, element) => {
-          if (index >= 10) return false; // Only check first 10 scripts
-          
-          const scriptContent = $(element).html();
-          if (scriptContent) {
-            // Look for wibufile.com URLs with MP4 extension in scripts
-            const wibufileMp4Matches = scriptContent.match(/(https?:\/\/[^"'\s]*wibufile\.com[^"'\s]*\.mp4[^"'\s]*)/gi);
-            if (wibufileMp4Matches && wibufileMp4Matches.length > 0) {
-              videoUrl = wibufileMp4Matches[0];
-              videoType = 'wibufile_mp4_script';
-              console.log(`Found wibufile MP4 in script ${index + 1}: ${videoUrl}`);
-              return false; // Break the loop
-            }
-          }
-        });
-      }
-
-
 
       if (videoUrl) {
-        console.log(`✅ Found video URL: ${videoUrl} (type: ${videoType})`);
+        console.log(`🎉 Success! Found video URL: ${videoUrl} (type: ${videoType})`);
         return {
           url: videoUrl,
           type: videoType,
           episodeUrl: episodeUrl,
-          playerOptions: playerOptions
+          playerOptions: playerOptions,
+          postId: postId
         };
       } else {
-        console.log('❌ No video URL found');
+        console.log('❌ No video URL found after all attempts');
         return {
           url: null,
           type: null,
           episodeUrl: episodeUrl,
-          playerOptions: playerOptions
+          playerOptions: playerOptions,
+          postId: postId
         };
       }
     } catch (error) {
-      console.error('Error scraping episode video:', error);
+      console.error('❌ Error scraping episode video:', error);
       return null;
     }
   }
@@ -1302,7 +1066,7 @@ class SamehadakuScraper {
   }
 
   async fetchVideoFromAPI(episodeUrl, postId, playerOptionIndex, playerOptionId, playerOptionText) {
-    console.log(`Fetching video from API for ${playerOptionText} (${playerOptionId}) with post ID ${postId} and nume ${playerOptionIndex}`);
+    console.log(`🚀 Fetching video from API for ${playerOptionText} (${playerOptionId}) with post ID ${postId} and nume ${playerOptionIndex}`);
 
     try {
       const apiUrl = `${this.baseUrl}wp-admin/admin-ajax.php`;
@@ -1312,58 +1076,116 @@ class SamehadakuScraper {
       formData.append('nume', playerOptionIndex);
       formData.append('type', 'schtml');
 
-      console.log(`Calling API: ${apiUrl}`);
-      console.log(`Form data: action=player_ajax, post=${postId}, nume=${playerOptionIndex}, type=schtml`);
+      console.log(`📡 Calling API: ${apiUrl}`);
+      console.log(`📝 Form data: action=player_ajax, post=${postId}, nume=${playerOptionIndex}, type=schtml`);
 
       const response = await axios.post(apiUrl, formData, {
-        timeout: 30000,
+        timeout: 45000, // Increased timeout to 45 seconds
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en-US,en;q=0.5',
-          'Accept-Encoding': 'gzip, deflate',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9,id;q=0.8',
+          'Accept-Encoding': 'gzip, deflate, br',
           'Connection': 'keep-alive',
           'Referer': episodeUrl,
-          'Origin': this.baseUrl
+          'Origin': this.baseUrl,
+          'Sec-Fetch-Dest': 'empty',
+          'Sec-Fetch-Mode': 'cors',
+          'Sec-Fetch-Site': 'same-origin',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         }
       });
 
-      console.log(`API Response status: ${response.status}`);
-      console.log(`API Response data: ${response.data.substring(0, 200)}...`);
+      console.log(`📊 API Response status: ${response.status}`);
+      console.log(`📄 API Response data length: ${response.data.length} characters`);
+      console.log(`📄 API Response preview: ${response.data.substring(0, 300)}...`);
 
       // Parse the response to extract video URL
       const $ = cheerio.load(response.data);
       
-      // Look for iframe with video URL
+      // Method 1: Look for iframe with video URL
       const iframe = $('iframe');
       if (iframe.length > 0) {
         const src = iframe.attr('src');
-        if (src && (src.includes('.mp4') || src.includes('wibufile.com'))) {
-          console.log(`✅ Found video URL in API response: ${src}`);
-          return src;
+        if (src) {
+          console.log(`🔍 Found iframe with src: ${src}`);
+          if (src.includes('.mp4') || src.includes('wibufile.com') || src.includes('video')) {
+            console.log(`✅ Found video URL in iframe: ${src}`);
+            return src;
+          }
         }
       }
 
-      // Look for video URL in the response text
-      const videoMatch = response.data.match(/src="([^"]*\.mp4[^"]*)"/i);
-      if (videoMatch) {
-        console.log(`✅ Found video URL in response text: ${videoMatch[1]}`);
-        return videoMatch[1];
+      // Method 2: Look for video URL in the response text with enhanced patterns
+      const videoPatterns = [
+        /src="([^"]*\.mp4[^"]*)"/i,
+        /src="([^"]*wibufile\.com[^"]*)"/i,
+        /src="([^"]*video[^"]*)"/i,
+        /href="([^"]*\.mp4[^"]*)"/i,
+        /url="([^"]*\.mp4[^"]*)"/i,
+        /data-src="([^"]*\.mp4[^"]*)"/i,
+        /data-url="([^"]*\.mp4[^"]*)"/i
+      ];
+      
+      for (const pattern of videoPatterns) {
+        const videoMatch = response.data.match(pattern);
+        if (videoMatch) {
+          console.log(`✅ Found video URL with pattern: ${videoMatch[1]}`);
+          return videoMatch[1];
+        }
       }
 
-      // Look for wibufile.com URLs
+      // Method 3: Look for wibufile.com URLs specifically
       const wibufileMatch = response.data.match(/(https?:\/\/[^"'\s]*wibufile\.com[^"'\s]*\.mp4[^"'\s]*)/i);
       if (wibufileMatch) {
         console.log(`✅ Found wibufile URL in response: ${wibufileMatch[1]}`);
         return wibufileMatch[1];
       }
 
+      // Method 4: Look for any MP4 URLs
+      const mp4Match = response.data.match(/(https?:\/\/[^"'\s]*\.mp4[^"'\s]*)/i);
+      if (mp4Match) {
+        console.log(`✅ Found MP4 URL in response: ${mp4Match[1]}`);
+        return mp4Match[1];
+      }
+
+      // Method 5: Look for video URLs in script tags within response
+      const scriptMatches = response.data.match(/<script[^>]*>([\s\S]*?)<\/script>/gi);
+      if (scriptMatches) {
+        for (const script of scriptMatches) {
+          const videoInScript = script.match(/(https?:\/\/[^"'\s]*\.mp4[^"'\s]*)/i);
+          if (videoInScript) {
+            console.log(`✅ Found video URL in script: ${videoInScript[1]}`);
+            return videoInScript[1];
+          }
+        }
+      }
+
+      // Method 6: Look for any URL that might be a video
+      const urlMatches = response.data.match(/(https?:\/\/[^"'\s]+)/gi);
+      if (urlMatches) {
+        for (const url of urlMatches) {
+          if (url.includes('wibufile.com') || url.includes('.mp4') || url.includes('video')) {
+            console.log(`✅ Found potential video URL: ${url}`);
+            return url;
+          }
+        }
+      }
+
       console.log('❌ No video URL found in API response');
       return null;
 
     } catch (error) {
-      console.error(`Error fetching video from API for ${playerOptionText}:`, error.message);
+      console.error(`❌ Error fetching video from API for ${playerOptionText}:`, error.message);
+      
+      // Log more details for debugging
+      if (error.response) {
+        console.error(`📊 Response status: ${error.response.status}`);
+        console.error(`📄 Response data: ${error.response.data}`);
+      }
+      
       return null;
     }
   }

@@ -28,10 +28,10 @@ Backend API untuk platform streaming anime GitAnime dengan fitur scraping otomat
 - `GET /api/video-url?originalUrl=<video_url>` - Get processed video URL with proxy
 
 ### Admin Endpoints (Require ADMIN_PASSWORD)
-- `POST /api/scrape` - Manual trigger for main scraping
-- `POST /api/scrape-anime-list` - Manual trigger for anime list scraping
+- `POST /api/scrape` - Manual trigger for all three scraping processes (main scraping + anime list + latest episodes)
+- `POST /api/scrape-anime-list` - Manual trigger for anime list scraping only
 - `POST /api/scrape-anime-list-batch` - Manual batch scraping with page range
-- `POST /api/scrape-latest-episodes` - Manual trigger for latest episodes scraping
+- `POST /api/scrape-latest-episodes` - Manual trigger for latest episodes scraping only
 - `POST /api/scrape-latest-episodes-batch` - Manual batch latest episodes scraping
 
 ### Debug/Test Endpoints

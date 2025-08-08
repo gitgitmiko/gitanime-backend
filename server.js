@@ -254,7 +254,7 @@ app.get('/api/anime', async (req, res) => {
 
 
 
-// Manual scrape trigger (admin only)
+// Manual scrape trigger (admin only) - Runs all three scraping processes
 app.post('/api/scrape', async (req, res) => {
   try {
     const { password } = req.body;
@@ -263,23 +263,74 @@ app.post('/api/scrape', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
+    console.log('🚀 Starting comprehensive scraping process...');
+    
+    // Process 1: Main scraping (latest episodes and anime details)
+    console.log('📺 Process 1/3: Running main scraping (latest episodes and anime details)...');
     await scraper.scrapeAll();
-    res.json({ message: 'Scraping completed successfully' });
+    console.log('✅ Process 1 completed: Main scraping finished');
+    
+    // Process 2: Anime list scraping (full catalog)
+    console.log('📋 Process 2/3: Running anime list scraping (full catalog)...');
+    const animeList = await scraper.scrapeAnimeListBatch(1, 10);
+    console.log(`✅ Process 2 completed: Anime list scraping finished - ${animeList.length} anime found`);
+    
+    // Process 3: Latest episodes scraping (homepage episodes)
+    console.log('🎬 Process 3/3: Running latest episodes scraping (homepage episodes)...');
+    const latestEpisodes = await scraper.scrapeLatestEpisodesBatch(1, 10);
+    console.log(`✅ Process 3 completed: Latest episodes scraping finished - ${latestEpisodes.length} episodes found`);
+    
+    console.log('🎉 All scraping processes completed successfully!');
+    
+    res.json({ 
+      message: 'All scraping processes completed successfully',
+      summary: {
+        mainScraping: 'Completed',
+        animeListScraping: `${animeList.length} anime found`,
+        latestEpisodesScraping: `${latestEpisodes.length} episodes found`,
+        totalProcesses: 3
+      }
+    });
   } catch (error) {
-    console.error('Error during scraping:', error);
-    res.status(500).json({ error: 'Failed to scrape data' });
+    console.error('❌ Error during comprehensive scraping:', error);
+    res.status(500).json({ error: 'Failed to complete all scraping processes', details: error.message });
   }
 });
 
-// Manual scrape trigger for testing (no password required)
+// Manual scrape trigger for testing (no password required) - Runs all three scraping processes
 app.post('/api/scrape-test', async (req, res) => {
   try {
-    console.log('Manual scrape triggered via /api/scrape-test');
+    console.log('🚀 Manual comprehensive scraping triggered via /api/scrape-test');
+    
+    // Process 1: Main scraping (latest episodes and anime details)
+    console.log('📺 Process 1/3: Running main scraping (latest episodes and anime details)...');
     await scraper.scrapeAll();
-    res.json({ message: 'Scraping completed successfully' });
+    console.log('✅ Process 1 completed: Main scraping finished');
+    
+    // Process 2: Anime list scraping (full catalog)
+    console.log('📋 Process 2/3: Running anime list scraping (full catalog)...');
+    const animeList = await scraper.scrapeAnimeListBatch(1, 10);
+    console.log(`✅ Process 2 completed: Anime list scraping finished - ${animeList.length} anime found`);
+    
+    // Process 3: Latest episodes scraping (homepage episodes)
+    console.log('🎬 Process 3/3: Running latest episodes scraping (homepage episodes)...');
+    const latestEpisodes = await scraper.scrapeLatestEpisodesBatch(1, 10);
+    console.log(`✅ Process 3 completed: Latest episodes scraping finished - ${latestEpisodes.length} episodes found`);
+    
+    console.log('🎉 All scraping processes completed successfully!');
+    
+    res.json({ 
+      message: 'All scraping processes completed successfully',
+      summary: {
+        mainScraping: 'Completed',
+        animeListScraping: `${animeList.length} anime found`,
+        latestEpisodesScraping: `${latestEpisodes.length} episodes found`,
+        totalProcesses: 3
+      }
+    });
   } catch (error) {
-    console.error('Error during scraping:', error);
-    res.status(500).json({ error: 'Failed to scrape data' });
+    console.error('❌ Error during comprehensive scraping:', error);
+    res.status(500).json({ error: 'Failed to complete all scraping processes', details: error.message });
   }
 });
 

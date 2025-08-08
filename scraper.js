@@ -15,21 +15,43 @@ class SamehadakuScraper {
     console.log('Initializing GitAnime scraper...');
     
     // Ensure data file exists
-            await this.ensureDataFile();
-        
-        // Schedule scraping every day at midnight (12 AM)
-        cron.schedule('0 0 * * *', async () => {
-          console.log('Running scheduled scrape at midnight...');
-          try {
-            await this.scrapeAll();
-            console.log('Scheduled scrape completed successfully');
-          } catch (error) {
-            console.error('Scheduled scrape failed:', error);
-          }
-        });
-        
-        // Initial scrape
+    await this.ensureDataFile();
+    
+    // Schedule scraping every day at midnight (12 AM)
+    cron.schedule('0 0 * * *', async () => {
+      console.log('Running scheduled scrape at midnight...');
+      try {
         await this.scrapeAll();
+        console.log('Scheduled scrape completed successfully');
+      } catch (error) {
+        console.error('Scheduled scrape failed:', error);
+      }
+    });
+    
+    // Schedule anime list scraping every day at 1 AM (after main scraping)
+    cron.schedule('0 1 * * *', async () => {
+      console.log('Running scheduled anime list scrape at 1 AM...');
+      try {
+        const animeList = await this.scrapeAnimeListBatch(1, 10);
+        await this.saveAnimeList(animeList);
+        console.log('Scheduled anime list scrape completed successfully');
+      } catch (error) {
+        console.error('Scheduled anime list scrape failed:', error);
+      }
+    });
+    
+    // Initial scrape
+    await this.scrapeAll();
+    
+    // Initial anime list scrape
+    console.log('Starting initial anime list scraping...');
+    try {
+      const animeList = await this.scrapeAnimeListBatch(1, 10);
+      await this.saveAnimeList(animeList);
+      console.log('Initial anime list scraping completed successfully');
+    } catch (error) {
+      console.error('Initial anime list scraping failed:', error);
+    }
   }
 
   async ensureDataFile() {

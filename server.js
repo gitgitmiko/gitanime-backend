@@ -3,6 +3,7 @@ const cors = require('cors');
 const fs = require('fs-extra');
 const path = require('path');
 const configManager = require('./configManager');
+const axios = require('axios'); // Added axios for video proxy
 
 // Production environment check
 const isProduction = process.env.NODE_ENV === 'production';
@@ -751,6 +752,231 @@ app.post('/api/scrape-latest-episodes-batch', async (req, res) => {
       success: false, 
       error: 'Failed to scrape latest episodes',
       details: error.message 
+    });
+  }
+});
+
+// Video proxy endpoint to handle CORS issues
+app.get('/api/video-proxy', async (req, res) => {
+  try {
+    const { url } = req.query;
+    
+    if (!url) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Video URL is required' 
+      });
+    }
+
+    console.log(`Proxying video request to: ${url}`);
+
+    // Set CORS headers for video streaming
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Accept-Ranges, Content-Range');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+
+    // Handle HEAD requests for video metadata
+    if (req.method === 'HEAD') {
+      try {
+        const headResponse = await axios.head(url, {
+          timeout: 10000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Range': req.headers.range || 'bytes=0-'
+          }
+        });
+
+        // Forward headers from the video server
+        Object.keys(headResponse.headers).forEach(key => {
+          res.setHeader(key, headResponse.headers[key]);
+        });
+
+        res.status(200).end();
+        return;
+      } catch (error) {
+        console.error('Error in HEAD request:', error.message);
+        res.status(500).json({ 
+          success: false, 
+          message: 'Failed to fetch video metadata' 
+        });
+        return;
+      }
+    }
+
+    // Handle GET requests for video streaming
+    try {
+      const videoResponse = await axios.get(url, {
+        timeout: 30000,
+        responseType: 'stream',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Range': req.headers.range || 'bytes=0-',
+          'Referer': 'https://v1.samehadaku.how/'
+        }
+      });
+
+      // Forward headers from the video server
+      Object.keys(videoResponse.headers).forEach(key => {
+        if (key.toLowerCase() !== 'content-encoding') { // Don't forward encoding headers
+          res.setHeader(key, videoResponse.headers[key]);
+        }
+      });
+
+      // Set content type for video
+      if (!res.getHeader('Content-Type')) {
+        res.setHeader('Content-Type', 'video/mp4');
+      }
+
+      // Pipe the video stream to response
+      videoResponse.data.pipe(res);
+
+    } catch (error) {
+      console.error('Error streaming video:', error.message);
+      
+      // If it's a CORS error, try to provide a more helpful response
+      if (error.code === 'ECONNREFUSED' || error.message.includes('CORS')) {
+        res.status(403).json({
+          success: false,
+          message: 'Video access blocked by CORS policy. Try using the proxy endpoint.',
+          originalError: error.message
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          message: 'Failed to stream video',
+          originalError: error.message
+        });
+      }
+    }
+
+  } catch (error) {
+    console.error('Error in video proxy:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error in video proxy' 
+    });
+  }
+});
+
+// Video info endpoint to get video metadata without streaming
+app.get('/api/video-info', async (req, res) => {
+  try {
+    const { url } = req.query;
+    
+    if (!url) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Video URL is required' 
+      });
+    }
+
+    console.log(`Getting video info for: ${url}`);
+
+    try {
+      const response = await axios.head(url, {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Referer': 'https://v1.samehadaku.how/'
+        }
+      });
+
+      const videoInfo = {
+        url: url,
+        contentType: response.headers['content-type'] || 'video/mp4',
+        contentLength: response.headers['content-length'],
+        acceptRanges: response.headers['accept-ranges'],
+        lastModified: response.headers['last-modified'],
+        etag: response.headers['etag'],
+        accessible: true
+      };
+
+      res.json({
+        success: true,
+        data: videoInfo
+      });
+
+    } catch (error) {
+      console.error('Error getting video info:', error.message);
+      
+      res.json({
+        success: false,
+        data: {
+          url: url,
+          accessible: false,
+          error: error.message
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('Error in video info endpoint:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error in video info endpoint' 
+    });
+  }
+});
+
+// Get processed video URL with proxy
+app.get('/api/video-url', async (req, res) => {
+  try {
+    const { originalUrl } = req.query;
+    
+    if (!originalUrl) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Original video URL is required' 
+      });
+    }
+
+    console.log(`Processing video URL: ${originalUrl}`);
+
+    // Check if the video is accessible
+    try {
+      const videoInfoResponse = await axios.head(originalUrl, {
+        timeout: 10000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Referer': 'https://v1.samehadaku.how/'
+        }
+      });
+
+      // If video is accessible, return proxy URL
+      const proxyUrl = `${req.protocol}://${req.get('host')}/api/video-proxy?url=${encodeURIComponent(originalUrl)}`;
+      
+      res.json({
+        success: true,
+        data: {
+          originalUrl: originalUrl,
+          proxyUrl: proxyUrl,
+          accessible: true,
+          contentType: videoInfoResponse.headers['content-type'] || 'video/mp4',
+          contentLength: videoInfoResponse.headers['content-length']
+        }
+      });
+
+    } catch (error) {
+      console.error('Video not accessible:', error.message);
+      
+      res.json({
+        success: false,
+        data: {
+          originalUrl: originalUrl,
+          accessible: false,
+          error: error.message,
+          message: 'Video may be blocked by CORS or not accessible'
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('Error processing video URL:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error processing video URL' 
     });
   }
 });

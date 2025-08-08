@@ -14,37 +14,59 @@ Backend API untuk platform streaming anime GitAnime dengan fitur scraping otomat
 
 ## API Endpoints
 
-### Health Check
-- `GET /health` - Status kesehatan API
-- `GET /api/health` - Status kesehatan API (alternatif)
+### Core Endpoints
+- `GET /api/latest` - Get latest episodes grouped by anime
+- `GET /api/anime` - Get newly released anime episodes (filtered by releasedOn)
+- `GET /api/anime-list` - Get full anime catalog with pagination
+- `GET /api/latest-episodes` - Get latest episodes for homepage with pagination
+- `GET /api/anime-detail?url=<anime_url>` - Get detailed anime information
+- `GET /api/episode-detail?url=<episode_url>` - Get detailed episode information
 
-### Episode Terbaru
-- `GET /api/latest` - Episode terbaru (dikelompokkan per anime)
-- `GET /api/anime` - Anime dengan episode terbaru (filtered by releasedOn)
-- **NEW**: `GET /api/latest-episodes` - Episode terbaru dengan pagination untuk halaman depan
-  - Query params: `page`, `limit`, `search`, `forceRefresh`
-  - Scrapes dari: `https://v1.samehadaku.how/anime-terbaru/` (pages 1-10)
+### Video Streaming Endpoints (CORS Solution)
+- `GET /api/video-proxy?url=<video_url>` - Proxy video streaming to bypass CORS
+- `GET /api/video-info?url=<video_url>` - Get video metadata without streaming
+- `GET /api/video-url?originalUrl=<video_url>` - Get processed video URL with proxy
 
-### Katalog Anime
-- `GET /api/anime-list` - Katalog anime lengkap dengan pagination
-  - Query params: `page`, `limit`, `search`, `forceRefresh`
-  - Scrapes dari: `https://v1.samehadaku.how/daftar-anime-2/` (pages 1-10)
+### Admin Endpoints (Require ADMIN_PASSWORD)
+- `POST /api/scrape` - Manual trigger for main scraping
+- `POST /api/scrape-anime-list` - Manual trigger for anime list scraping
+- `POST /api/scrape-anime-list-batch` - Manual batch scraping with page range
+- `POST /api/scrape-latest-episodes` - Manual trigger for latest episodes scraping
+- `POST /api/scrape-latest-episodes-batch` - Manual batch latest episodes scraping
 
-### Detail Anime
-- `GET /api/anime-detail?url=<anime_url>` - Detail anime atau episode
-- `GET /api/episode-video?url=<episode_url>` - Video player data
+### Debug/Test Endpoints
+- `GET /health` - Health check endpoint
+- `GET /api/debug` - Debug data file status
+- `GET /api/raw-data` - Get raw data file content
+- `GET /api/scrape-test` - Test scraping without password
 
-### Admin Endpoints (memerlukan password)
-- `POST /api/scrape` - Manual scraping episode terbaru
-- `POST /api/scrape-anime-list` - Manual scraping katalog anime
-- **NEW**: `POST /api/scrape-latest-episodes` - Manual scraping episode terbaru untuk homepage
-- `POST /api/scrape-anime-list-batch` - Batch scraping katalog anime dengan range halaman
-- **NEW**: `POST /api/scrape-latest-episodes-batch` - Batch scraping episode terbaru dengan range halaman
+## Video Streaming Solution
 
-### Debug Endpoints
-- `GET /api/debug` - Status file data
-- `GET /api/raw-data` - Raw data content
-- `GET /api/scrape-test` - Test scraping tanpa password
+Untuk mengatasi masalah CORS saat memutar video dari `wibufile.com` atau provider video lainnya, backend menyediakan sistem proxy:
+
+### Cara Penggunaan:
+
+1. **Gunakan endpoint proxy untuk video:**
+   ```
+   GET /api/video-proxy?url=https://api.wibufile.com/embed/bf0c0d08-1829-43e5-bfba-1f8292f8278c
+   ```
+
+2. **Cek aksesibilitas video:**
+   ```
+   GET /api/video-info?url=https://api.wibufile.com/embed/bf0c0d08-1829-43e5-bfba-1f8292f8278c
+   ```
+
+3. **Dapatkan URL proxy yang sudah diproses:**
+   ```
+   GET /api/video-url?originalUrl=https://api.wibufile.com/embed/bf0c0d08-1829-43e5-bfba-1f8292f8278c
+   ```
+
+### Fitur Proxy:
+- ✅ Mengatasi masalah CORS
+- ✅ Support video streaming dengan range requests
+- ✅ Forward headers dari server video asli
+- ✅ Error handling yang informatif
+- ✅ Timeout protection
 
 ## Scraping Schedule
 

@@ -183,6 +183,9 @@ app.get('/api/anime', async (req, res) => {
     // Get all episodes from latestEpisodes array (this contains the actual episode data)
     let allEpisodes = data.latestEpisodes || [];
     
+    // Filter only episodes that have releasedOn (not null)
+    allEpisodes = allEpisodes.filter(episode => episode.releasedOn && episode.releasedOn !== null);
+    
     // Search functionality
     if (search) {
       allEpisodes = allEpisodes.filter(episode => 
@@ -191,8 +194,20 @@ app.get('/api/anime', async (req, res) => {
       );
     }
     
-    // Sort by createdAt descending (newest first)
-    allEpisodes.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    // Sort by releasedOn descending (newest first)
+    // Convert "X days yang lalu" to actual date for sorting
+    allEpisodes.sort((a, b) => {
+      const getDaysAgo = (releasedOn) => {
+        if (!releasedOn) return 0;
+        const match = releasedOn.match(/(\d+)\s+days?\s+yang\s+lalu/i);
+        return match ? parseInt(match[1]) : 0;
+      };
+      
+      const daysA = getDaysAgo(a.releasedOn);
+      const daysB = getDaysAgo(b.releasedOn);
+      
+      return daysA - daysB; // Ascending order (0 days ago first, then 1 day ago, etc.)
+    });
     
     // Pagination
     const startIndex = (page - 1) * limit;

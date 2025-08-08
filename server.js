@@ -16,6 +16,11 @@ const corsOptions = {
     
     const allowedOrigins = [
       'http://localhost:3000',
+      'http://localhost:3001',
+      'http://localhost:5173',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001',
+      'http://127.0.0.1:5173',
       'https://frontend-pgb3obd5u-gitgitmikos-projects.vercel.app',
       'https://frontend-9kei8umgj-gitgitmikos-projects.vercel.app',
       'https://frontend-mbs1npfxy-gitgitmikos-projects.vercel.app',
@@ -24,13 +29,26 @@ const corsOptions = {
       'https://frontend-9fw7o7cci-gitgitmikos-projects.vercel.app',
       'https://frontend-n4ejxee5v-gitgitmikos-projects.vercel.app',
       'https://frontend-1vo932eb9-gitgitmikos-projects.vercel.app',
-      'https://frontend-alpha-nine-27.vercel.app'
+      'https://frontend-alpha-nine-27.vercel.app',
+      // Tambahkan domain Render.com untuk development
+      'https://gitanime-backend.onrender.com',
+      'https://gitanime-backend-dev.onrender.com'
     ];
+    
+    // Log origin untuk debugging
+    console.log('CORS request from origin:', origin);
     
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      // Untuk sementara, izinkan semua origin di development
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('Development mode: Allowing origin:', origin);
+        callback(null, true);
+      } else {
+        console.log('Production mode: Blocking origin:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
     }
   },
   credentials: true,
@@ -47,20 +65,6 @@ app.use(cors(corsOptions));
 
 // Handle preflight requests for all routes
 app.options('*', cors(corsOptions));
-
-// Additional CORS headers for all responses
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', req.headers.origin);
-  res.header('Access-Control-Allow-Credentials', true);
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
-  if (req.method === 'OPTIONS') {
-    res.sendStatus(200);
-  } else {
-    next();
-  }
-});
 app.use(express.json());
 app.use(express.static('public'));
 

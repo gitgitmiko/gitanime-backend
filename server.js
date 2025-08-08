@@ -85,6 +85,7 @@ if (isProduction) {
       fs.writeJsonSync(DATA_FILE, {
         anime: [],
         episodes: [],
+        latestEpisodes: [],
         lastUpdated: new Date().toISOString(),
         totalAnime: 0,
         totalEpisodes: 0
@@ -118,13 +119,14 @@ app.get('/api/anime', async (req, res) => {
     const data = await fs.readJson(DATA_FILE);
     const { page = 1, limit = 20, search = '' } = req.query;
     
-    // Get all episodes from episodes array
-    let allEpisodes = data.episodes || [];
+    // Get all episodes from latestEpisodes array (this contains the actual episode data)
+    let allEpisodes = data.latestEpisodes || [];
     
     // Search functionality
     if (search) {
       allEpisodes = allEpisodes.filter(episode => 
-        episode.title.toLowerCase().includes(search.toLowerCase())
+        episode.title.toLowerCase().includes(search.toLowerCase()) ||
+        (episode.episodeTitle && episode.episodeTitle.toLowerCase().includes(search.toLowerCase()))
       );
     }
     
@@ -207,35 +209,26 @@ app.put('/api/config', async (req, res) => {
 app.get('/api/latest', async (req, res) => {
   try {
     const data = await fs.readJson(DATA_FILE);
-    const animeList = data.anime || [];
+    const latestEpisodes = data.latestEpisodes || [];
     
-    // Create a map of all episodes for quick lookup
-    const episodeMap = new Map();
-    data.anime.forEach(item => {
-      if (item.episodeNumber) {
-        // This is an episode
-        const key = `${item.title}-${item.episodeNumber}`;
-        episodeMap.set(key, item);
-      }
-    });
+    // Sort by createdAt descending (newest first) and take first 20
+    const sortedLatest = latestEpisodes
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 20);
     
-    // Process each anime to get latest episode info
-    const latestAnime = animeList.filter(anime => !anime.episodeNumber).map(anime => {
-      const latestEpisodeKey = `${anime.title}-${anime.latestEpisode}`;
-      const latestEpisode = episodeMap.get(latestEpisodeKey);
-      
-      // Construct direct link to latest episode
-      const latestEpisodeLink = `https://v1.samehadaku.how/${anime.id}-episode-${anime.latestEpisode}/`;
-      
+    // Transform data to match expected format
+    const latestAnime = sortedLatest.map(episode => {
       return {
-        id: anime.id,
-        title: anime.title,
-        totalEpisodes: anime.totalEpisodes,
-        latestEpisode: anime.latestEpisode,
-        postedBy: latestEpisode ? latestEpisode.postedBy : null,
-        releasedOn: latestEpisode ? latestEpisode.releasedOn : null,
-        latestEpisodeLink: latestEpisodeLink,
-        createdAt: anime.createdAt
+        id: episode.id,
+        title: episode.title,
+        episodeNumber: episode.episodeNumber,
+        episodeTitle: episode.episodeTitle,
+        postedBy: episode.postedBy,
+        releasedOn: episode.releasedOn,
+        episodeUrl: episode.episodeUrl,
+        animeUrl: episode.animeUrl,
+        imageUrl: episode.imageUrl,
+        createdAt: episode.createdAt
       };
     });
     

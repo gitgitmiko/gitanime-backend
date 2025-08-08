@@ -189,6 +189,11 @@ class SamehadakuScraper {
           const releasedMatch = episodeText.match(/Released on:\s*([^\n]+)/i);
           const releasedOn = releasedMatch ? releasedMatch[1].trim() : null;
           
+          // Extract image
+          const imgElement = $el.find('img').first();
+          const imageUrl = imgElement.attr('src') || imgElement.attr('data-src');
+          const fullImageUrl = imageUrl ? (imageUrl.startsWith('http') ? imageUrl : `${this.baseUrl}${imageUrl.replace(/^\//, '')}`) : null;
+          
           if (title && link) {
             const episodeId = this.generateId(`${title}-episode-${episodeNumber}`);
             
@@ -199,6 +204,7 @@ class SamehadakuScraper {
               link: this.resolveUrl(link),
               postedBy: postedBy,
               releasedOn: releasedOn,
+              imageUrl: fullImageUrl,
               animeId: this.generateId(title),
               createdAt: new Date().toISOString()
             });
@@ -1774,6 +1780,11 @@ class SamehadakuScraper {
               const releasedMatch = episodeText.match(/Released on:\s*([^\n]+)/i);
               const releasedOn = releasedMatch ? releasedMatch[1].trim() : null;
               
+              // Extract image
+              const imgElement = $el.find('img').first();
+              const imageUrl = imgElement.attr('src') || imgElement.attr('data-src');
+              const fullImageUrl = imageUrl ? (imageUrl.startsWith('http') ? imageUrl : `${this.baseUrl}${imageUrl.replace(/^\//, '')}`) : null;
+              
               if (title && link) {
                 const episodeId = this.generateId(`${title}-episode-${episodeNumber}`);
                 
@@ -1784,6 +1795,7 @@ class SamehadakuScraper {
                   link: this.resolveUrl(link),
                   postedBy: postedBy,
                   releasedOn: releasedOn,
+                  imageUrl: fullImageUrl,
                   animeId: this.generateId(title),
                   createdAt: new Date().toISOString(),
                   pageNumber: currentPage

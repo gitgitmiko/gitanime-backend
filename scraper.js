@@ -1422,111 +1422,113 @@ class SamehadakuScraper {
         
         console.log(`URL: ${pageUrl}`);
         
-        const response = await axios.get(pageUrl, {
-          timeout: 30000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-          }
-        });
-        
-        const $ = cheerio.load(response.data);
-        
-        // Find all anime entries
-        const animeEntries = $('article.animpost');
-        
-        if (animeEntries.length === 0) {
-          console.log(`No anime entries found on page ${currentPage}, stopping...`);
-          break;
-        }
-        
-        console.log(`Found ${animeEntries.length} anime entries on page ${currentPage}`);
-        
-        for (let i = 0; i < animeEntries.length; i++) {
-          const entry = $(animeEntries[i]);
+        try {
+          const response = await axios.get(pageUrl, {
+            timeout: 30000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+          });
           
-          try {
-            // Extract anime information
-            const titleElement = entry.find('.data .title h2');
-            const title = titleElement.text().trim();
+          const $ = cheerio.load(response.data);
+          
+          // Find all anime entries
+          const animeEntries = $('article.animpost');
+          
+          if (animeEntries.length === 0) {
+            console.log(`No anime entries found on page ${currentPage}, stopping...`);
+            break;
+          }
+          
+          console.log(`Found ${animeEntries.length} anime entries on page ${currentPage}`);
+          
+          for (let i = 0; i < animeEntries.length; i++) {
+            const entry = $(animeEntries[i]);
             
-            if (!title) {
-              console.log(`Skipping entry ${i + 1} on page ${currentPage} - no title found`);
+            try {
+              // Extract anime information
+              const titleElement = entry.find('.data .title h2');
+              const title = titleElement.text().trim();
+              
+              if (!title) {
+                console.log(`Skipping entry ${i + 1} on page ${currentPage} - no title found`);
+                continue;
+              }
+              
+              // Extract link
+              const linkElement = entry.find('.animposx a').first();
+              const link = linkElement.attr('href');
+              const fullLink = link ? this.resolveUrl(link) : null;
+              
+              // Extract image
+              const imgElement = entry.find('.content-thumb img.anmsa').first();
+              const imageUrl = imgElement.attr('src') || imgElement.attr('data-src');
+              const fullImageUrl = imageUrl ? this.resolveImageUrl(imageUrl) : null;
+              
+              // Extract rating/score
+              const ratingElement = entry.find('.score');
+              const rating = ratingElement.text().trim();
+              
+              // Extract status (ongoing/completed)
+              const statusElement = entry.find('.data .type');
+              const status = statusElement.text().trim();
+              
+              // Extract type (TV, Movie, OVA, etc.)
+              const typeElement = entry.find('.content-thumb .type');
+              const type = typeElement.text().trim();
+              
+              // Extract genres
+              const genreElements = entry.find('.stooltip .genres .mta a');
+              const genres = genreElements.map((index, element) => $(element).text().trim()).get();
+              
+              // Extract description/synopsis
+              const descElement = entry.find('.stooltip .ttls');
+              const description = descElement.text().trim();
+              
+              // Extract episode count or other info
+              const episodeElement = entry.find('.metadata span:last-child');
+              const episodeInfo = episodeElement.text().trim();
+              
+              const animeData = {
+                id: this.generateId(title),
+                title: title,
+                link: fullLink,
+                imageUrl: fullImageUrl,
+                rating: rating || null,
+                status: status || null,
+                type: type || null,
+                genres: genres.length > 0 ? genres : [],
+                description: description || null,
+                episodeInfo: episodeInfo || null,
+                scrapedAt: new Date().toISOString()
+              };
+              
+              // Check if this anime is already in the list (avoid duplicates)
+              const existingIndex = allAnime.findIndex(anime => anime.title === title);
+              if (existingIndex === -1) {
+                allAnime.push(animeData);
+                console.log(`✅ Added anime: ${title} (page ${currentPage})`);
+              } else {
+                console.log(`⚠️ Skipping duplicate: ${title}`);
+              }
+              
+            } catch (error) {
+              console.error(`Error processing anime entry ${i + 1} on page ${currentPage}:`, error.message);
               continue;
             }
-            
-            // Extract link
-            const linkElement = entry.find('.animposx a').first();
-            const link = linkElement.attr('href');
-            const fullLink = link ? this.resolveUrl(link) : null;
-            
-            // Extract image
-            const imgElement = entry.find('.content-thumb img.anmsa').first();
-            const imageUrl = imgElement.attr('src') || imgElement.attr('data-src');
-            const fullImageUrl = imageUrl ? this.resolveImageUrl(imageUrl) : null;
-            
-            // Extract rating/score
-            const ratingElement = entry.find('.score');
-            const rating = ratingElement.text().trim();
-            
-            // Extract status (ongoing/completed)
-            const statusElement = entry.find('.data .type');
-            const status = statusElement.text().trim();
-            
-            // Extract type (TV, Movie, OVA, etc.)
-            const typeElement = entry.find('.content-thumb .type');
-            const type = typeElement.text().trim();
-            
-            // Extract genres
-            const genreElements = entry.find('.stooltip .genres .mta a');
-            const genres = genreElements.map((index, element) => $(element).text().trim()).get();
-            
-            // Extract description/synopsis
-            const descElement = entry.find('.stooltip .ttls');
-            const description = descElement.text().trim();
-            
-            // Extract episode count or other info
-            const episodeElement = entry.find('.metadata span:last-child');
-            const episodeInfo = episodeElement.text().trim();
-            
-            const animeData = {
-              id: this.generateId(title),
-              title: title,
-              link: fullLink,
-              imageUrl: fullImageUrl,
-              rating: rating || null,
-              status: status || null,
-              type: type || null,
-              genres: genres.length > 0 ? genres : [],
-              description: description || null,
-              episodeInfo: episodeInfo || null,
-              scrapedAt: new Date().toISOString()
-            };
-            
-            // Check if this anime is already in the list (avoid duplicates)
-            const existingIndex = allAnime.findIndex(anime => anime.title === title);
-            if (existingIndex === -1) {
-              allAnime.push(animeData);
-              console.log(`✅ Added anime: ${title}`);
-            } else {
-              console.log(`⚠️ Skipping duplicate: ${title}`);
-            }
-            
-            // Add delay to be respectful to the server
-            await this.delay(100);
-            
-          } catch (error) {
-            console.error(`Error processing anime entry ${i + 1} on page ${currentPage}:`, error.message);
-            continue;
           }
+          
+          // Move to next page
+          currentPage++;
+          console.log(`Moving to page ${currentPage}...`);
+          
+          // Add delay between pages
+          await this.delay(1000);
+          
+        } catch (error) {
+          console.error(`Error accessing page ${currentPage}:`, error.message);
+          break;
         }
-        
-        // Check if we should continue to next page
-        // Since we know pages 2-10 exist, just continue until maxPages
-        currentPage++;
-        console.log(`Moving to page ${currentPage}...`);
-        
-        // Add delay between pages
-        await this.delay(1000);
       }
       
       console.log(`✅ Anime list scraping completed! Total anime found: ${allAnime.length}`);

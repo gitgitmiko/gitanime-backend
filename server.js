@@ -77,6 +77,12 @@ const isProduction = process.env.NODE_ENV === 'production';
 const DATA_FILE = isProduction ? '/tmp/anime-data.json' : './data/anime-data.json';
 const CONFIG_FILE = isProduction ? '/tmp/config.json' : './data/config.json';
 
+// Set environment variables for scraper to use the same file paths
+if (isProduction) {
+  process.env.DATA_FILE = DATA_FILE;
+  process.env.CONFIG_FILE = CONFIG_FILE;
+}
+
 // Initialize data files for production
 if (isProduction) {
   try {
@@ -111,6 +117,38 @@ app.get('/health', (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'GitAnime API is running' });
+});
+
+// Debug endpoint to check data file status
+app.get('/api/debug', async (req, res) => {
+  try {
+    const dataExists = await fs.pathExists(DATA_FILE);
+    let dataInfo = { exists: dataExists };
+    
+    if (dataExists) {
+      const data = await fs.readJson(DATA_FILE);
+      dataInfo = {
+        exists: true,
+        filePath: DATA_FILE,
+        lastUpdated: data.lastUpdated,
+        totalAnime: data.totalAnime,
+        totalEpisodes: data.totalEpisodes,
+        latestEpisodesCount: (data.latestEpisodes || []).length,
+        animeCount: (data.anime || []).length,
+        episodesCount: (data.episodes || []).length
+      };
+    }
+    
+    res.json({
+      status: 'OK',
+      environment: process.env.NODE_ENV || 'development',
+      dataFile: DATA_FILE,
+      dataInfo: dataInfo
+    });
+  } catch (error) {
+    console.error('Error in debug endpoint:', error);
+    res.status(500).json({ error: 'Failed to get debug info' });
+  }
 });
 
 // Get all anime
@@ -164,6 +202,18 @@ app.post('/api/scrape', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
+    await scraper.scrapeAll();
+    res.json({ message: 'Scraping completed successfully' });
+  } catch (error) {
+    console.error('Error during scraping:', error);
+    res.status(500).json({ error: 'Failed to scrape data' });
+  }
+});
+
+// Manual scrape trigger for testing (no password required)
+app.post('/api/scrape-test', async (req, res) => {
+  try {
+    console.log('Manual scrape triggered via /api/scrape-test');
     await scraper.scrapeAll();
     res.json({ message: 'Scraping completed successfully' });
   } catch (error) {

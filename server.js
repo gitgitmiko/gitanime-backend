@@ -2,8 +2,23 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs-extra');
 const path = require('path');
-const scraper = require('./scraper');
 const configManager = require('./configManager');
+
+// Production environment check
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Data file path
+const DATA_FILE = isProduction ? '/tmp/anime-data.json' : './data/anime-data.json';
+const CONFIG_FILE = isProduction ? '/tmp/config.json' : './data/config.json';
+
+// Set environment variables for scraper to use the same file paths
+if (isProduction) {
+  process.env.DATA_FILE = DATA_FILE;
+  process.env.CONFIG_FILE = CONFIG_FILE;
+}
+
+// Import scraper after setting environment variables
+const scraper = require('./scraper');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -69,19 +84,6 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json());
 app.use(express.static('public'));
-
-// Production environment check
-const isProduction = process.env.NODE_ENV === 'production';
-
-// Data file path
-const DATA_FILE = isProduction ? '/tmp/anime-data.json' : './data/anime-data.json';
-const CONFIG_FILE = isProduction ? '/tmp/config.json' : './data/config.json';
-
-// Set environment variables for scraper to use the same file paths
-if (isProduction) {
-  process.env.DATA_FILE = DATA_FILE;
-  process.env.CONFIG_FILE = CONFIG_FILE;
-}
 
 // Initialize data files for production
 if (isProduction) {

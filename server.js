@@ -289,6 +289,20 @@ app.get('/api/latest', async (req, res) => {
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
       .slice(0, 20);
     
+    // Group episodes by anime title to count episodes per anime
+    const animeEpisodeCounts = {};
+    const uniqueAnime = new Set();
+    
+    latestEpisodes.forEach(episode => {
+      const animeTitle = episode.title;
+      uniqueAnime.add(animeTitle);
+      
+      if (!animeEpisodeCounts[animeTitle]) {
+        animeEpisodeCounts[animeTitle] = 0;
+      }
+      animeEpisodeCounts[animeTitle]++;
+    });
+    
     // Transform data to match expected format
     const latestAnime = sortedLatest.map(episode => {
       return {
@@ -305,7 +319,20 @@ app.get('/api/latest', async (req, res) => {
       };
     });
     
-    res.json({ latest: latestAnime });
+    // Create summary information
+    const summary = {
+      totalAnime: uniqueAnime.size,
+      totalEpisodes: latestEpisodes.length,
+      animeEpisodeCounts: Object.entries(animeEpisodeCounts).map(([animeTitle, episodeCount]) => ({
+        animeTitle: animeTitle,
+        episodeCount: episodeCount
+      })).sort((a, b) => b.episodeCount - a.episodeCount) // Sort by episode count descending
+    };
+    
+    res.json({ 
+      latest: latestAnime,
+      summary: summary
+    });
   } catch (error) {
     console.error('Error fetching latest:', error);
     res.status(500).json({ error: 'Failed to fetch latest episodes' });

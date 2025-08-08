@@ -299,53 +299,71 @@ app.get('/api/latest', async (req, res) => {
     const data = await fs.readJson(DATA_FILE);
     const latestEpisodes = data.latestEpisodes || [];
     
-    // Sort by createdAt descending (newest first) and take first 20
-    const sortedLatest = latestEpisodes
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-      .slice(0, 20);
-    
-    // Group episodes by anime title to count episodes per anime
-    const animeEpisodeCounts = {};
-    const uniqueAnime = new Set();
+    // Group episodes by anime title
+    const animeGroups = {};
     
     latestEpisodes.forEach(episode => {
       const animeTitle = episode.title;
-      uniqueAnime.add(animeTitle);
       
-      if (!animeEpisodeCounts[animeTitle]) {
-        animeEpisodeCounts[animeTitle] = 0;
+      if (!animeGroups[animeTitle]) {
+        animeGroups[animeTitle] = {
+          title: animeTitle,
+          totalEpisodes: 0,
+          episodes: [],
+          latestEpisode: null,
+          imageUrl: episode.imageUrl || null,
+          animeUrl: episode.animeUrl || null
+        };
       }
-      animeEpisodeCounts[animeTitle]++;
-    });
-    
-    // Transform data to match expected format
-    const latestAnime = sortedLatest.map(episode => {
-      return {
+      
+      animeGroups[animeTitle].totalEpisodes++;
+      animeGroups[animeTitle].episodes.push({
         id: episode.id,
-        title: episode.title,
         episodeNumber: episode.episodeNumber,
         episodeTitle: episode.episodeTitle,
         postedBy: episode.postedBy,
         releasedOn: episode.releasedOn,
         episodeUrl: episode.episodeUrl,
-        animeUrl: episode.animeUrl,
-        imageUrl: episode.imageUrl,
         createdAt: episode.createdAt
-      };
+      });
+      
+      // Update latest episode if this one is newer
+      if (!animeGroups[animeTitle].latestEpisode || 
+          new Date(episode.createdAt) > new Date(animeGroups[animeTitle].latestEpisode.createdAt)) {
+        animeGroups[animeTitle].latestEpisode = {
+          id: episode.id,
+          episodeNumber: episode.episodeNumber,
+          episodeTitle: episode.episodeTitle,
+          postedBy: episode.postedBy,
+          releasedOn: episode.releasedOn,
+          episodeUrl: episode.episodeUrl,
+          createdAt: episode.createdAt
+        };
+      }
     });
+    
+    // Convert to array and sort by latest episode date
+    const animeList = Object.values(animeGroups)
+      .sort((a, b) => {
+        if (!a.latestEpisode || !b.latestEpisode) return 0;
+        return new Date(b.latestEpisode.createdAt) - new Date(a.latestEpisode.createdAt);
+      });
     
     // Create summary information
     const summary = {
-      totalAnime: uniqueAnime.size,
+      totalAnime: animeList.length,
       totalEpisodes: latestEpisodes.length,
-      animeEpisodeCounts: Object.entries(animeEpisodeCounts).map(([animeTitle, episodeCount]) => ({
-        animeTitle: animeTitle,
-        episodeCount: episodeCount
-      })).sort((a, b) => b.episodeCount - a.episodeCount) // Sort by episode count descending
+      animeList: animeList.map(anime => ({
+        title: anime.title,
+        totalEpisodes: anime.totalEpisodes,
+        latestEpisode: anime.latestEpisode,
+        imageUrl: anime.imageUrl,
+        animeUrl: anime.animeUrl
+      }))
     };
     
     res.json({ 
-      latest: latestAnime,
+      latest: animeList,
       summary: summary
     });
   } catch (error) {

@@ -1521,7 +1521,18 @@ class SamehadakuScraper {
         }
         
         // Check if there's a next page or if we've reached max pages
+        console.log(`Checking for next page...`);
         const nextPageLink = $('.pagination .next, .pagination a[rel="next"], .pagination a:contains("Next")');
+        const allPaginationLinks = $('.pagination a');
+        console.log(`Found ${allPaginationLinks.length} pagination links`);
+        
+        // Log all pagination links for debugging
+        allPaginationLinks.each((index, element) => {
+          const href = $(element).attr('href');
+          const text = $(element).text().trim();
+          console.log(`Pagination link ${index + 1}: "${text}" -> ${href}`);
+        });
+        
         if (nextPageLink.length === 0) {
           console.log(`No next page found, stopping at page ${currentPage}`);
           break;

@@ -98,6 +98,10 @@ if (isProduction) {
 }
 
 // Routes
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', message: 'GitAnime API is running' });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'GitAnime API is running' });
 });

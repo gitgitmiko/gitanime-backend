@@ -1410,15 +1410,17 @@ class SamehadakuScraper {
     
     const allAnime = [];
     let currentPage = 1;
-    const maxPages = 50; // Limit to prevent infinite loop
+    const maxPages = 10; // Scrape up to page 10 as requested
     
     try {
       while (currentPage <= maxPages) {
-        console.log(`Scraping page ${currentPage}...`);
+        console.log(`\n=== Scraping page ${currentPage}/${maxPages} ===`);
         
         const pageUrl = currentPage === 1 
           ? `${this.baseUrl}daftar-anime-2/`
           : `${this.baseUrl}daftar-anime-2/page/${currentPage}/`;
+        
+        console.log(`URL: ${pageUrl}`);
         
         const response = await axios.get(pageUrl, {
           timeout: 30000,
@@ -1518,7 +1520,7 @@ class SamehadakuScraper {
           }
         }
         
-        // Check if there's a next page
+        // Check if there's a next page or if we've reached max pages
         const nextPageLink = $('.pagination .next, .pagination a[rel="next"], .pagination a:contains("Next")');
         if (nextPageLink.length === 0) {
           console.log(`No next page found, stopping at page ${currentPage}`);
@@ -1526,6 +1528,7 @@ class SamehadakuScraper {
         }
         
         currentPage++;
+        console.log(`Moving to page ${currentPage}...`);
         
         // Add delay between pages
         await this.delay(1000);

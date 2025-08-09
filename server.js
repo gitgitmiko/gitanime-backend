@@ -4,6 +4,8 @@ const fs = require('fs-extra');
 const path = require('path');
 const configManager = require('./configManager');
 const axios = require('axios'); // Added axios for video proxy
+const http = require('http');
+const https = require('https');
 
 // Production environment check
 const isProduction = process.env.NODE_ENV === 'production';
@@ -27,6 +29,13 @@ const scraper = require('./scraper');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+
+// Keep-alive axios instance for upstream video requests
+const upstreamAxios = axios.create({
+  timeout: 120000,
+  httpAgent: new http.Agent({ keepAlive: true, maxSockets: 128 }),
+  httpsAgent: new https.Agent({ keepAlive: true, maxSockets: 128 })
+});
 
 // CORS configuration
 const corsOptions = {
@@ -75,8 +84,8 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Length', 'Content-Type'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Range', 'Content-Range'],
+  exposedHeaders: ['Content-Length', 'Content-Type', 'Accept-Ranges', 'Content-Range', 'ETag', 'Last-Modified'],
   preflightContinue: false,
   optionsSuccessStatus: 204,
   maxAge: 86400 // Cache preflight for 24 hours
@@ -142,6 +151,52 @@ app.get('/health', (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'GitAnime API is running' });
+});
+
+// Simple HLS proxy: rewrite playlist (.m3u8) to route segments (.ts/.m4s) via this proxy
+app.get('/api/hls-proxy', async (req, res) => {
+  try {
+    const { url } = req.query;
+    if (!url) {
+      return res.status(400).json({ success: false, message: 'Playlist URL is required' });
+    }
+
+    const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36';
+    const resp = await upstreamAxios.get(url, { headers: { 'User-Agent': ua }, responseType: 'text', validateStatus: () => true });
+    if (resp.status >= 400) {
+      return res.status(resp.status).json({ success: false, message: 'Upstream error fetching playlist', status: resp.status });
+    }
+
+    const playlistText = typeof resp.data === 'string' ? resp.data : resp.data.toString('utf8');
+    const baseUrl = new URL(url);
+    const rewriteLine = (line) => {
+      try {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) return line; // comments or tags
+        // Absolute URL
+        let segmentUrl;
+        if (/^https?:\/\//i.test(trimmed)) {
+          segmentUrl = trimmed;
+        } else if (trimmed.startsWith('/')) {
+          segmentUrl = `${baseUrl.protocol}//${baseUrl.host}${trimmed}`;
+        } else {
+          const dir = url.replace(/[^\/]*$/, '');
+          segmentUrl = new URL(trimmed, dir).toString();
+        }
+        return `${req.protocol}://${req.get('host')}/api/video-proxy?url=${encodeURIComponent(segmentUrl)}`;
+      } catch {
+        return line;
+      }
+    };
+
+    const rewritten = playlistText.split(/\r?\n/).map(rewriteLine).join('\n');
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    res.setHeader('Cache-Control', 'no-cache');
+    return res.status(200).send(rewritten);
+  } catch (err) {
+    console.error('Error in HLS proxy:', err.message);
+    return res.status(500).json({ success: false, message: 'Failed to proxy HLS playlist' });
+  }
 });
 
 // Debug endpoint to check data file status
@@ -831,13 +886,15 @@ app.get('/api/video-proxy', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Range, Accept-Ranges, Content-Range');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Type, Accept-Ranges, Content-Range, ETag, Last-Modified');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
-    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+    // COEP can break cross-origin media; better omit or relax for video
+    // res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
 
     // Handle HEAD requests for video metadata
     if (req.method === 'HEAD') {
       try {
-        const headResponse = await axios.head(url, {
+        const headResponse = await upstreamAxios.head(url, {
           timeout: 10000,
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -845,9 +902,10 @@ app.get('/api/video-proxy', async (req, res) => {
           }
         });
 
-        // Forward headers from the video server
-        Object.keys(headResponse.headers).forEach(key => {
-          res.setHeader(key, headResponse.headers[key]);
+        // Forward selective headers for metadata probing
+        const headersToForward = ['accept-ranges', 'content-length', 'content-type', 'etag', 'last-modified'];
+        headersToForward.forEach(h => {
+          if (headResponse.headers[h]) res.setHeader(h, headResponse.headers[h]);
         });
 
         res.status(200).end();
@@ -864,21 +922,34 @@ app.get('/api/video-proxy', async (req, res) => {
 
     // Handle GET requests for video streaming
     try {
-      const videoResponse = await axios.get(url, {
+      const upstreamHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': 'https://v1.samehadaku.how/',
+        'Accept-Encoding': 'identity'
+      };
+      if (req.headers.range) {
+        upstreamHeaders['Range'] = req.headers.range;
+      }
+
+      const videoResponse = await upstreamAxios.get(url, {
         timeout: 30000,
         responseType: 'stream',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-          'Range': req.headers.range || 'bytes=0-',
-          'Referer': 'https://v1.samehadaku.how/'
-        }
+        headers: upstreamHeaders,
+        validateStatus: () => true // allow 206/200/etc without throwing
       });
 
-      // Forward headers from the video server
-      Object.keys(videoResponse.headers).forEach(key => {
-        if (key.toLowerCase() !== 'content-encoding') { // Don't forward encoding headers
-          res.setHeader(key, videoResponse.headers[key]);
-        }
+      // Forward critical headers selectively
+      const headersToForward = [
+        'accept-ranges',
+        'content-length',
+        'content-type',
+        'content-range',
+        'etag',
+        'last-modified'
+      ];
+      headersToForward.forEach(h => {
+        const v = videoResponse.headers[h];
+        if (v) res.setHeader(h, v);
       });
 
       // Set content type for video
@@ -886,7 +957,31 @@ app.get('/api/video-proxy', async (req, res) => {
         res.setHeader('Content-Type', 'video/mp4');
       }
 
-      // Pipe the video stream to response
+      // Caching hint untuk segmen/chunk berulang dan koneksi stabil
+      res.setHeader('Cache-Control', 'public, max-age=3600, immutable');
+      res.setHeader('Accept-Ranges', videoResponse.headers['accept-ranges'] || 'bytes');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+
+      // Mirror upstream status (200 atau 206) dan kirim header early
+      res.status(videoResponse.status === 206 ? 206 : 200);
+      res.setHeader('Vary', 'Range');
+      if (typeof res.flushHeaders === 'function') {
+        res.flushHeaders();
+      }
+
+      // Pipe with backpressure; handle client aborts
+      videoResponse.data.on('error', (err) => {
+        console.error('Upstream stream error:', err.message);
+        if (!res.headersSent) {
+          res.status(502).end();
+        } else {
+          res.end();
+        }
+      });
+      req.on('close', () => {
+        if (videoResponse.data.destroy) videoResponse.data.destroy();
+      });
       videoResponse.data.pipe(res);
 
     } catch (error) {
@@ -898,6 +993,13 @@ app.get('/api/video-proxy', async (req, res) => {
           success: false,
           message: 'Video access blocked by CORS policy. Try using the proxy endpoint.',
           originalError: error.message
+        });
+      } else if (error.response) {
+        // Forward upstream error status if present
+        res.status(error.response.status).json({
+          success: false,
+          message: 'Failed to stream video from upstream',
+          status: error.response.status
         });
       } else {
         res.status(500).json({
@@ -932,7 +1034,7 @@ app.get('/api/video-info', async (req, res) => {
     console.log(`Getting video info for: ${url}`);
 
     try {
-      const response = await axios.head(url, {
+      const response = await upstreamAxios.head(url, {
         timeout: 10000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -945,6 +1047,7 @@ app.get('/api/video-info', async (req, res) => {
         contentType: response.headers['content-type'] || 'video/mp4',
         contentLength: response.headers['content-length'],
         acceptRanges: response.headers['accept-ranges'],
+        contentRange: response.headers['content-range'],
         lastModified: response.headers['last-modified'],
         etag: response.headers['etag'],
         accessible: true
@@ -993,7 +1096,7 @@ app.get('/api/video-url', async (req, res) => {
 
     // Check if the video is accessible
     try {
-      const videoInfoResponse = await axios.head(originalUrl, {
+      const videoInfoResponse = await upstreamAxios.head(originalUrl, {
         timeout: 10000,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',

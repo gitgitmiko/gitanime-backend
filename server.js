@@ -16,6 +16,37 @@ const CONFIG_FILE = isProduction ? '/tmp/config.json' : './data/config.json';
 const ANIME_LIST_FILE = isProduction ? '/tmp/anime-list.json' : './data/anime-list.json';
 const LATEST_EPISODES_FILE = isProduction ? '/tmp/latest-episodes.json' : './data/latest-episodes.json';
 
+// In-memory cache untuk meningkatkan performa
+const memoryCache = {
+  latestEpisodes: null,
+  lastCacheUpdate: null,
+  cacheExpiry: 5 * 60 * 1000, // 5 menit
+  animeList: null,
+  animeData: null
+};
+
+// Cache management functions
+const getCachedData = (key) => {
+  const cache = memoryCache[key];
+  if (cache && memoryCache.lastCacheUpdate && 
+      (Date.now() - memoryCache.lastCacheUpdate) < memoryCache.cacheExpiry) {
+    return cache;
+  }
+  return null;
+};
+
+const setCachedData = (key, data) => {
+  memoryCache[key] = data;
+  memoryCache.lastCacheUpdate = Date.now();
+};
+
+const clearCache = () => {
+  memoryCache.latestEpisodes = null;
+  memoryCache.animeList = null;
+  memoryCache.animeData = null;
+  memoryCache.lastCacheUpdate = null;
+};
+
 // Set environment variables for scraper to use the same file paths
 if (isProduction) {
   process.env.DATA_FILE = DATA_FILE;
@@ -96,6 +127,73 @@ app.use(cors(corsOptions));
 
 // Handle preflight requests for all routes
 app.options('*', cors(corsOptions));
+
+// Additional CORS preflight handling for specific routes
+app.options('/api/latest-episodes', cors(corsOptions));
+app.options('/api/anime-list', cors(corsOptions));
+app.options('/api/anime-data', cors(corsOptions));
+app.options('/api/anime', cors(corsOptions));
+
+// Cache management endpoint
+app.post('/api/clear-cache', async (req, res) => {
+  try {
+    const { password } = req.body;
+    
+    if (password !== process.env.ADMIN_PASSWORD) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    clearCache();
+    console.log('Cache cleared successfully');
+    
+    res.json({ 
+      success: true,
+      message: 'Cache cleared successfully',
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error clearing cache:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to clear cache' 
+    });
+  }
+});
+
+// Cache status endpoint
+app.get('/api/cache-status', async (req, res) => {
+  try {
+    const cacheStatus = {
+      latestEpisodes: {
+        cached: !!memoryCache.latestEpisodes,
+        lastUpdate: memoryCache.lastCacheUpdate,
+        expiry: memoryCache.cacheExpiry,
+        timeUntilExpiry: memoryCache.lastCacheUpdate ? 
+          (memoryCache.cacheExpiry - (Date.now() - memoryCache.lastCacheUpdate)) : null
+      },
+      animeList: {
+        cached: !!memoryCache.animeList,
+        lastUpdate: memoryCache.lastCacheUpdate
+      },
+      animeData: {
+        cached: !!memoryCache.animeData,
+        lastUpdate: memoryCache.lastCacheUpdate
+      }
+    };
+    
+    res.json({
+      success: true,
+      data: cacheStatus
+    });
+  } catch (error) {
+    console.error('Error getting cache status:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to get cache status' 
+    });
+  }
+});
+
 app.use(express.json());
 app.use(express.static('public'));
 
@@ -255,8 +353,69 @@ app.get('/api/raw-data', async (req, res) => {
 // Get all anime
 app.get('/api/anime', async (req, res) => {
   try {
+    const { page = 1, limit = 20, search = '', forceRefresh = false } = req.query;
+    
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cachedData = getCachedData('animeData');
+      if (cachedData) {
+        console.log('Serving anime data from cache');
+        
+        // Get all episodes from latestEpisodes array (this contains the actual episode data)
+        let allEpisodes = cachedData.latestEpisodes || [];
+        
+        // Filter only episodes that have releasedOn (not null)
+        allEpisodes = allEpisodes.filter(episode => episode.releasedOn && episode.releasedOn !== null);
+        
+        // Search functionality
+        if (search) {
+          allEpisodes = allEpisodes.filter(episode => 
+            episode.title.toLowerCase().includes(search.toLowerCase()) ||
+            (episode.episodeTitle && episode.episodeTitle.toLowerCase().includes(search.toLowerCase()))
+          );
+        }
+        
+        // Sort by releasedOn descending (newest first)
+        // Convert "X days yang lalu" to actual date for sorting
+        allEpisodes.sort((a, b) => {
+          const getDaysAgo = (releasedOn) => {
+            if (!releasedOn) return 0;
+            const match = releasedOn.match(/(\d+)\s+days?\s+yang\s+lalu/i);
+            return match ? parseInt(match[1]) : 0;
+          };
+          
+          const daysA = getDaysAgo(a.releasedOn);
+          const daysB = getDaysAgo(b.releasedOn);
+          
+          return daysA - daysB; // Ascending order (0 days ago first, then 1 day ago, etc.)
+        });
+        
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedEpisodes = allEpisodes.slice(startIndex, endIndex);
+        
+        return res.json({
+          anime: paginatedEpisodes,
+          pagination: {
+            currentPage: parseInt(page),
+            totalPages: Math.ceil(allEpisodes.length / limit),
+            totalItems: allEpisodes.length,
+            itemsPerPage: parseInt(limit)
+          },
+          fromCache: true
+        });
+      }
+    }
+    
+    // If no cache or force refresh, read from file
+    console.log('Reading anime data from file');
     const data = await fs.readJson(DATA_FILE);
-    const { page = 1, limit = 20, search = '' } = req.query;
+    
+    // Cache the data
+    setCachedData('animeData', data);
+    
+    const { page: pageParam = 1, limit: limitParam = 20, search: searchParam = '' } = req.query;
     
     // Get all episodes from latestEpisodes array (this contains the actual episode data)
     let allEpisodes = data.latestEpisodes || [];
@@ -265,10 +424,10 @@ app.get('/api/anime', async (req, res) => {
     allEpisodes = allEpisodes.filter(episode => episode.releasedOn && episode.releasedOn !== null);
     
     // Search functionality
-    if (search) {
+    if (searchParam) {
       allEpisodes = allEpisodes.filter(episode => 
-        episode.title.toLowerCase().includes(search.toLowerCase()) ||
-        (episode.episodeTitle && episode.episodeTitle.toLowerCase().includes(search.toLowerCase()))
+        episode.title.toLowerCase().includes(searchParam.toLowerCase()) ||
+        (episode.episodeTitle && episode.episodeTitle.toLowerCase().includes(searchParam.toLowerCase()))
       );
     }
     
@@ -288,18 +447,19 @@ app.get('/api/anime', async (req, res) => {
     });
     
     // Pagination
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + parseInt(limit);
+    const startIndex = (pageParam - 1) * limitParam;
+    const endIndex = startIndex + parseInt(limitParam);
     const paginatedEpisodes = allEpisodes.slice(startIndex, endIndex);
     
     res.json({
       anime: paginatedEpisodes,
       pagination: {
-        currentPage: parseInt(page),
-        totalPages: Math.ceil(allEpisodes.length / limit),
+        currentPage: parseInt(pageParam),
+        totalPages: Math.ceil(allEpisodes.length / limitParam),
         totalItems: allEpisodes.length,
-        itemsPerPage: parseInt(limit)
-      }
+        itemsPerPage: parseInt(limitParam)
+      },
+      fromCache: false
     });
   } catch (error) {
     console.error('Error fetching anime:', error);
@@ -324,6 +484,10 @@ app.post('/api/scrape', async (req, res) => {
     console.log('📺 Process 1/3: Running main scraping (latest episodes and anime details)...');
     await scraper.scrapeAll();
     console.log('✅ Process 1 completed: Main scraping finished');
+    
+    // Clear cache to ensure fresh data
+    clearCache();
+    console.log('🗑️ Cache cleared to ensure fresh data');
     
     // Process 2: Anime list scraping (full catalog)
     console.log('📋 Process 2/3: Running anime list scraping (full catalog)...');
@@ -364,6 +528,10 @@ app.post('/api/scrape-test', async (req, res) => {
     console.log('📺 Process 1/3: Running main scraping (latest episodes and anime details)...');
     await scraper.scrapeAll();
     console.log('✅ Process 1 completed: Main scraping finished');
+    
+    // Clear cache to ensure fresh data
+    clearCache();
+    console.log('🗑️ Cache cleared to ensure fresh data');
     
     // Process 2: Anime list scraping (full catalog)
     console.log('📋 Process 2/3: Running anime list scraping (full catalog)...');
@@ -541,13 +709,57 @@ app.get('/api/anime-detail', async (req, res) => {
   }
 });
 
-// Get anime list (full catalog)
+// Get anime list with pagination
 app.get('/api/anime-list', async (req, res) => {
   try {
     const { page = 1, limit = 20, search = '', forceRefresh = false } = req.query;
+    
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cachedData = getCachedData('animeList');
+      if (cachedData) {
+        console.log('Serving anime list from cache');
+        
+        let filteredAnime = cachedData.animeList || [];
+        
+        // Search functionality
+        if (search) {
+          filteredAnime = filteredAnime.filter(anime => 
+            anime.title.toLowerCase().includes(search.toLowerCase()) ||
+            (anime.genre && anime.genre.toLowerCase().includes(search.toLowerCase()))
+          );
+        }
+        
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedAnime = filteredAnime.slice(startIndex, endIndex);
+        
+        return res.json({
+          success: true,
+          data: {
+            anime: paginatedAnime,
+            pagination: {
+              currentPage: parseInt(page),
+              totalPages: Math.ceil(filteredAnime.length / limit),
+              totalItems: filteredAnime.length,
+              itemsPerPage: parseInt(limit)
+            },
+            summary: {
+              totalAnime: cachedData.totalAnime,
+              lastUpdated: cachedData.lastUpdated,
+              source: cachedData.source,
+              fromCache: true
+            }
+          }
+        });
+      }
+    }
+    
+    // If no cache or force refresh, read from file
+    console.log('Reading anime list from file');
     const animeListFile = process.env.ANIME_LIST_FILE || './data/anime-list.json';
     
-    // Selalu baca dari file; tidak scraping otomatis saat GET
     let animeData;
     try {
       const exists = await fs.pathExists(animeListFile);
@@ -560,9 +772,16 @@ app.get('/api/anime-list', async (req, res) => {
         };
         await fs.writeJson(animeListFile, animeData, { spaces: 2 });
       } else {
-        animeData = await fs.readJson(animeListFile);
+        // Use readFile instead of readJson for better performance
+        const fileContent = await fs.readFile(animeListFile, 'utf8');
+        animeData = JSON.parse(fileContent);
       }
+      
+      // Cache the data
+      setCachedData('animeList', animeData);
+      
     } catch (e) {
+      console.error('Error reading anime list file:', e);
       animeData = {
         animeList: [],
         totalAnime: 0,
@@ -577,8 +796,7 @@ app.get('/api/anime-list', async (req, res) => {
     if (search) {
       filteredAnime = filteredAnime.filter(anime => 
         anime.title.toLowerCase().includes(search.toLowerCase()) ||
-        (anime.description && anime.description.toLowerCase().includes(search.toLowerCase())) ||
-        (anime.genres && anime.genres.some(genre => genre.toLowerCase().includes(search.toLowerCase())))
+        (anime.genre && anime.genre.toLowerCase().includes(search.toLowerCase()))
       );
     }
     
@@ -600,7 +818,8 @@ app.get('/api/anime-list', async (req, res) => {
         summary: {
           totalAnime: animeData.totalAnime,
           lastUpdated: animeData.lastUpdated,
-          source: animeData.source
+          source: animeData.source,
+          fromCache: false
         }
       }
     });
@@ -617,9 +836,53 @@ app.get('/api/anime-list', async (req, res) => {
 app.get('/api/latest-episodes', async (req, res) => {
   try {
     const { page = 1, limit = 20, search = '', forceRefresh = false } = req.query;
+    
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cachedData = getCachedData('latestEpisodes');
+      if (cachedData) {
+        console.log('Serving latest episodes from cache');
+        
+        let filteredEpisodes = cachedData.latestEpisodes || [];
+        
+        // Search functionality
+        if (search) {
+          filteredEpisodes = filteredEpisodes.filter(episode => 
+            episode.title.toLowerCase().includes(search.toLowerCase()) ||
+            (episode.postedBy && episode.postedBy.toLowerCase().includes(search.toLowerCase()))
+          );
+        }
+        
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedEpisodes = filteredEpisodes.slice(startIndex, endIndex);
+        
+        return res.json({
+          success: true,
+          data: {
+            episodes: paginatedEpisodes,
+            pagination: {
+              currentPage: parseInt(page),
+              totalPages: Math.ceil(filteredEpisodes.length / limit),
+              totalItems: filteredEpisodes.length,
+              itemsPerPage: parseInt(limit)
+            },
+            summary: {
+              totalEpisodes: cachedData.totalEpisodes,
+              lastUpdated: cachedData.lastUpdated,
+              source: cachedData.source,
+              fromCache: true
+            }
+          }
+        });
+      }
+    }
+    
+    // If no cache or force refresh, read from file
+    console.log('Reading latest episodes from file');
     const latestEpisodesFile = process.env.LATEST_EPISODES_FILE || './data/latest-episodes.json';
     
-    // Selalu baca dari file; tidak scraping otomatis saat GET
     let episodesData;
     try {
       const exists = await fs.pathExists(latestEpisodesFile);
@@ -632,9 +895,16 @@ app.get('/api/latest-episodes', async (req, res) => {
         };
         await fs.writeJson(latestEpisodesFile, episodesData, { spaces: 2 });
       } else {
-        episodesData = await fs.readJson(latestEpisodesFile);
+        // Use readFile instead of readJson for better performance
+        const fileContent = await fs.readFile(latestEpisodesFile, 'utf8');
+        episodesData = JSON.parse(fileContent);
       }
+      
+      // Cache the data
+      setCachedData('latestEpisodes', episodesData);
+      
     } catch (e) {
+      console.error('Error reading latest episodes file:', e);
       episodesData = {
         latestEpisodes: [],
         totalEpisodes: 0,
@@ -671,7 +941,8 @@ app.get('/api/latest-episodes', async (req, res) => {
         summary: {
           totalEpisodes: episodesData.totalEpisodes,
           lastUpdated: episodesData.lastUpdated,
-          source: episodesData.source
+          source: episodesData.source,
+          fromCache: false
         }
       }
     });
@@ -697,6 +968,10 @@ app.post('/api/scrape-latest-episodes', async (req, res) => {
     // Use unlimited pages
     const latestEpisodes = await scraper.scrapeLatestEpisodesBatch(1);
     const result = await scraper.saveLatestEpisodes(latestEpisodes);
+    
+    // Clear cache to ensure fresh data
+    clearCache();
+    console.log('🗑️ Cache cleared to ensure fresh data');
     
     res.json({ 
       success: true,
@@ -729,6 +1004,10 @@ app.post('/api/scrape-anime-list', async (req, res) => {
     // Use unlimited pages
     const animeList = await scraper.scrapeAnimeListBatch(1);
     const result = await scraper.saveAnimeList(animeList);
+    
+    // Clear cache to ensure fresh data
+    clearCache();
+    console.log('🗑️ Cache cleared to ensure fresh data');
     
     res.json({ 
       success: true,
@@ -830,6 +1109,10 @@ app.post('/api/scrape-latest-episodes-batch', async (req, res) => {
     // Use batch scraping with specified range
     const latestEpisodes = await scraper.scrapeLatestEpisodesBatch(parseInt(startPage), endPage ? parseInt(endPage) : null);
     const result = await scraper.saveLatestEpisodes(latestEpisodes);
+    
+    // Clear cache to ensure fresh data
+    clearCache();
+    console.log('🗑️ Cache cleared to ensure fresh data');
     
     res.json({ 
       success: true,

@@ -194,6 +194,78 @@ app.get('/api/cache-status', async (req, res) => {
   }
 });
 
+// Debug endpoint untuk memeriksa file path dan data
+app.get('/api/debug-files', async (req, res) => {
+  try {
+    const debugInfo = {
+      environment: process.env.NODE_ENV || 'development',
+      filePaths: {
+        DATA_FILE: process.env.DATA_FILE || './data/anime-data.json',
+        CONFIG_FILE: process.env.CONFIG_FILE || './data/config.json',
+        ANIME_LIST_FILE: process.env.ANIME_LIST_FILE || './data/anime-list.json',
+        LATEST_EPISODES_FILE: process.env.LATEST_EPISODES_FILE || './data/latest-episodes.json'
+      },
+      serverPaths: {
+        DATA_FILE: DATA_FILE,
+        CONFIG_FILE: CONFIG_FILE,
+        ANIME_LIST_FILE: ANIME_LIST_FILE,
+        LATEST_EPISODES_FILE: LATEST_EPISODES_FILE
+      },
+      fileExists: {},
+      fileSizes: {},
+      cacheData: {
+        latestEpisodes: memoryCache.latestEpisodes ? {
+          totalEpisodes: memoryCache.latestEpisodes.latestEpisodes?.length || 0,
+          lastUpdated: memoryCache.latestEpisodes.lastUpdated
+        } : null,
+        animeList: memoryCache.animeList ? {
+          totalAnime: memoryCache.animeList.animeList?.length || 0,
+          lastUpdated: memoryCache.animeList.lastUpdated
+        } : null,
+        animeData: memoryCache.animeData ? {
+          totalAnime: memoryCache.animeData.anime?.length || 0,
+          totalEpisodes: memoryCache.animeData.episodes?.length || 0,
+          lastUpdated: memoryCache.animeData.lastUpdated
+        } : null
+      }
+    };
+
+    // Check if files exist and get sizes
+    for (const [key, path] of Object.entries(debugInfo.filePaths)) {
+      try {
+        const exists = await fs.pathExists(path);
+        debugInfo.fileExists[key] = exists;
+        
+        if (exists) {
+          const stats = await fs.stat(path);
+          debugInfo.fileSizes[key] = {
+            size: stats.size,
+            sizeInMB: (stats.size / 1024 / 1024).toFixed(2),
+            modified: stats.mtime
+          };
+        } else {
+          debugInfo.fileSizes[key] = null;
+        }
+      } catch (error) {
+        debugInfo.fileExists[key] = false;
+        debugInfo.fileSizes[key] = { error: error.message };
+      }
+    }
+
+    res.json({
+      success: true,
+      data: debugInfo
+    });
+  } catch (error) {
+    console.error('Error getting debug info:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to get debug info',
+      error: error.message
+    });
+  }
+});
+
 app.use(express.json());
 app.use(express.static('public'));
 
@@ -840,7 +912,7 @@ app.get('/api/latest-episodes', async (req, res) => {
     // Check cache first (unless force refresh)
     if (!forceRefresh) {
       const cachedData = getCachedData('latestEpisodes');
-      if (cachedData) {
+      if (cachedData && cachedData.latestEpisodes && cachedData.latestEpisodes.length > 0) {
         console.log('Serving latest episodes from cache');
         
         let filteredEpisodes = cachedData.latestEpisodes || [];
@@ -887,17 +959,53 @@ app.get('/api/latest-episodes', async (req, res) => {
     try {
       const exists = await fs.pathExists(latestEpisodesFile);
       if (!exists) {
+        console.log(`File not found: ${latestEpisodesFile}`);
+        
+        // Try alternative paths for production
+        const alternativePaths = [
+          '/tmp/latest-episodes.json',
+          './data/latest-episodes.json',
+          './latest-episodes.json'
+        ];
+        
+        let foundFile = null;
+        for (const altPath of alternativePaths) {
+          if (await fs.pathExists(altPath)) {
+            foundFile = altPath;
+            console.log(`Found alternative file: ${altPath}`);
+            break;
+          }
+        }
+        
+        if (foundFile) {
+          const fileContent = await fs.readFile(foundFile, 'utf8');
+          episodesData = JSON.parse(fileContent);
+          console.log(`Loaded from alternative path: ${foundFile}`);
+        } else {
+          console.log('No alternative files found, creating empty data');
+          episodesData = {
+            latestEpisodes: [],
+            totalEpisodes: 0,
+            lastUpdated: new Date().toISOString(),
+            source: 'https://v1.samehadaku.how/anime-terbaru/'
+          };
+        }
+      } else {
+        // Use readFile instead of readJson for better performance
+        const fileContent = await fs.readFile(latestEpisodesFile, 'utf8');
+        episodesData = JSON.parse(fileContent);
+        console.log(`Loaded from primary path: ${latestEpisodesFile}`);
+      }
+      
+      // Validate data structure
+      if (!episodesData.latestEpisodes || !Array.isArray(episodesData.latestEpisodes)) {
+        console.log('Invalid data structure, resetting to empty');
         episodesData = {
           latestEpisodes: [],
           totalEpisodes: 0,
           lastUpdated: new Date().toISOString(),
           source: 'https://v1.samehadaku.how/anime-terbaru/'
         };
-        await fs.writeJson(latestEpisodesFile, episodesData, { spaces: 2 });
-      } else {
-        // Use readFile instead of readJson for better performance
-        const fileContent = await fs.readFile(latestEpisodesFile, 'utf8');
-        episodesData = JSON.parse(fileContent);
       }
       
       // Cache the data
@@ -1129,6 +1237,107 @@ app.post('/api/scrape-latest-episodes-batch', async (req, res) => {
       success: false, 
       error: 'Failed to scrape latest episodes',
       details: error.message 
+    });
+  }
+});
+
+// Force refresh data endpoint (admin only)
+app.post('/api/force-refresh', async (req, res) => {
+  try {
+    const { password } = req.body;
+    
+    if (password !== process.env.ADMIN_PASSWORD) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    console.log('🔄 Force refresh triggered - clearing cache and reloading data');
+    
+    // Clear cache first
+    clearCache();
+    
+    // Force reload data from files
+    const latestEpisodesFile = process.env.LATEST_EPISODES_FILE || './data/latest-episodes.json';
+    const animeListFile = process.env.ANIME_LIST_FILE || './data/anime-list.json';
+    const dataFile = process.env.DATA_FILE || './data/anime-data.json';
+    
+    let refreshResults = {
+      latestEpisodes: null,
+      animeList: null,
+      animeData: null,
+      errors: []
+    };
+    
+    // Try to reload latest episodes
+    try {
+      if (await fs.pathExists(latestEpisodesFile)) {
+        const fileContent = await fs.readFile(latestEpisodesFile, 'utf8');
+        const data = JSON.parse(fileContent);
+        setCachedData('latestEpisodes', data);
+        refreshResults.latestEpisodes = {
+          totalEpisodes: data.latestEpisodes?.length || 0,
+          lastUpdated: data.lastUpdated,
+          fileSize: (fileContent.length / 1024 / 1024).toFixed(2) + ' MB'
+        };
+        console.log(`✅ Latest episodes reloaded: ${data.latestEpisodes?.length || 0} episodes`);
+      } else {
+        refreshResults.errors.push(`Latest episodes file not found: ${latestEpisodesFile}`);
+      }
+    } catch (error) {
+      refreshResults.errors.push(`Error reloading latest episodes: ${error.message}`);
+    }
+    
+    // Try to reload anime list
+    try {
+      if (await fs.pathExists(animeListFile)) {
+        const fileContent = await fs.readFile(animeListFile, 'utf8');
+        const data = JSON.parse(fileContent);
+        setCachedData('animeList', data);
+        refreshResults.animeList = {
+          totalAnime: data.animeList?.length || 0,
+          lastUpdated: data.lastUpdated,
+          fileSize: (fileContent.length / 1024 / 1024).toFixed(2) + ' MB'
+        };
+        console.log(`✅ Anime list reloaded: ${data.animeList?.length || 0} anime`);
+      } else {
+        refreshResults.errors.push(`Anime list file not found: ${animeListFile}`);
+      }
+    } catch (error) {
+      refreshResults.errors.push(`Error reloading anime list: ${error.message}`);
+    }
+    
+    // Try to reload anime data
+    try {
+      if (await fs.pathExists(dataFile)) {
+        const fileContent = await fs.readFile(dataFile, 'utf8');
+        const data = JSON.parse(fileContent);
+        setCachedData('animeData', data);
+        refreshResults.animeData = {
+          totalAnime: data.anime?.length || 0,
+          totalEpisodes: data.episodes?.length || 0,
+          lastUpdated: data.lastUpdated,
+          fileSize: (fileContent.length / 1024 / 1024).toFixed(2) + ' MB'
+        };
+        console.log(`✅ Anime data reloaded: ${data.anime?.length || 0} anime, ${data.episodes?.length || 0} episodes`);
+      } else {
+        refreshResults.errors.push(`Anime data file not found: ${dataFile}`);
+      }
+    } catch (error) {
+      refreshResults.errors.push(`Error reloading anime data: ${error.message}`);
+    }
+    
+    res.json({ 
+      success: true,
+      message: 'Force refresh completed',
+      timestamp: new Date().toISOString(),
+      results: refreshResults
+    });
+    
+  } catch (error) {
+    console.error('Error during force refresh:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to force refresh',
+      error: error.message
     });
   }
 });
@@ -1447,14 +1656,4 @@ app.get('/api/cron-status', async (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`GitAnime API server running on port ${PORT}`);
-  console.log(`Health check: http://localhost:${PORT}/health`);
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-});
-
-// Export for Vercel
-module.exports = app;
-
-// Initialize scraping in all environments
-// Auto-scraping will run daily at midnight (12 AM)
-console.log(`${process.env.NODE_ENV || 'development'} mode: Initializing scraper...`);
-scraper.initialize();
+  console.log(`

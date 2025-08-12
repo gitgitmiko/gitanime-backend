@@ -16,64 +16,24 @@ class SamehadakuScraper {
     
     // Ensure data file exists
     await this.ensureDataFile();
-    
-    // Schedule scraping every day at midnight (12 AM)
-    cron.schedule('0 0 * * *', async () => {
-      console.log('Running scheduled scrape at midnight...');
-      try {
-        await this.scrapeAll();
-        console.log('Scheduled scrape completed successfully');
-      } catch (error) {
-        console.error('Scheduled scrape failed:', error);
-      }
-    });
-    
-    // Schedule anime list scraping every day at 1 AM (after main scraping)
-    cron.schedule('0 1 * * *', async () => {
-      console.log('Running scheduled anime list scrape at 1 AM...');
-      try {
-        const animeList = await this.scrapeAnimeListBatch(1, 10);
-        await this.saveAnimeList(animeList);
-        console.log('Scheduled anime list scrape completed successfully');
-      } catch (error) {
-        console.error('Scheduled anime list scrape failed:', error);
-      }
-    });
-    
-    // Schedule latest episodes batch scraping every day at 2 AM (after anime list)
-    cron.schedule('0 2 * * *', async () => {
-      console.log('Running scheduled latest episodes batch scrape at 2 AM...');
-      try {
-        const latestEpisodes = await this.scrapeLatestEpisodesBatch(1, 10);
-        await this.saveLatestEpisodes(latestEpisodes);
-        console.log('Scheduled latest episodes batch scrape completed successfully');
-      } catch (error) {
-        console.error('Scheduled latest episodes batch scrape failed:', error);
-      }
-    });
-    
-    // Initial scrape
-    await this.scrapeAll();
-    
-    // Initial anime list scrape
-    console.log('Starting initial anime list scraping...');
-    try {
-      const animeList = await this.scrapeAnimeListBatch(1, 10);
-      await this.saveAnimeList(animeList);
-      console.log('Initial anime list scraping completed successfully');
-    } catch (error) {
-      console.error('Initial anime list scraping failed:', error);
-    }
-    
-    // Initial latest episodes batch scrape
-    console.log('Starting initial latest episodes batch scraping...');
-    try {
-      const latestEpisodes = await this.scrapeLatestEpisodesBatch(1, 10);
-      await this.saveLatestEpisodes(latestEpisodes);
-      console.log('Initial latest episodes batch scraping completed successfully');
-    } catch (error) {
-      console.error('Initial latest episodes batch scraping failed:', error);
-    }
+
+    // Single scheduler at 00:00 WIB (Asia/Jakarta) to run full scraping once daily
+    cron.schedule(
+      '0 0 * * *',
+      async () => {
+        console.log('Running scheduled comprehensive scraping at 00:00 WIB...');
+        try {
+          // Scrape all pages for anime list and latest episodes, and save
+          await this.scrapeAllPages();
+          console.log('Scheduled comprehensive scraping completed successfully');
+        } catch (error) {
+          console.error('Scheduled comprehensive scraping failed:', error);
+        }
+      },
+      { timezone: 'Asia/Jakarta' }
+    );
+
+    // Do not scrape on startup; API akan hanya membaca data yang sudah disimpan
   }
 
   async ensureDataFile() {
@@ -1426,7 +1386,7 @@ class SamehadakuScraper {
     
     try {
       while (currentPage <= maxPages) {
-        console.log(`\n=== Batch Scraping page ${currentPage}/${endPage} ===`);
+        console.log(`\n=== Batch Scraping page ${currentPage} ===`);
         
         const pageUrl = currentPage === 1 
           ? `${this.baseUrl}daftar-anime-2/`
@@ -1568,7 +1528,7 @@ class SamehadakuScraper {
     
     try {
       while (currentPage <= maxPages) {
-        console.log(`\n=== Latest Episodes Batch Scraping page ${currentPage}/${endPage} ===`);
+        console.log(`\n=== Latest Episodes Batch Scraping page ${currentPage} ===`);
         
         const pageUrl = currentPage === 1 
           ? `${this.baseUrl}anime-terbaru/`

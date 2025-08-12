@@ -1268,7 +1268,7 @@ class SamehadakuScraper {
     
     const allAnime = [];
     let currentPage = 1;
-    const maxPages = 10; // Scrape up to page 10 as requested
+    let maxPages = 1000; // Set high limit, will stop when no more pages found
     
     // Track successful pages
     let successfulPages = 0;
@@ -1303,6 +1303,7 @@ class SamehadakuScraper {
           
           if (animeEntries.length === 0) {
             console.log(`No anime entries found on page ${currentPage}, stopping...`);
+            maxPages = currentPage - 1; // Update maxPages to actual last page
             break;
           }
           
@@ -1406,7 +1407,7 @@ class SamehadakuScraper {
         }
       }
       
-      console.log(`✅ Anime list scraping completed! Total anime found: ${allAnime.length} from ${successfulPages} pages`);
+      console.log(`✅ Anime list scraping completed! Total anime found: ${allAnime.length} from ${successfulPages} pages (stopped at page ${maxPages})`);
       return allAnime;
       
     } catch (error) {
@@ -1415,14 +1416,16 @@ class SamehadakuScraper {
     }
   }
 
-  async scrapeAnimeListBatch(startPage = 1, endPage = 10) {
-    console.log(`Starting batch scraping from page ${startPage} to ${endPage}...`);
+  async scrapeAnimeListBatch(startPage = 1, endPage = null) {
+    console.log(`Starting batch scraping from page ${startPage}${endPage ? ` to ${endPage}` : ' until no more pages'}...`);
     
     const allAnime = [];
     let successfulPages = 0;
+    let currentPage = startPage;
+    let maxPages = endPage || 1000; // If no endPage specified, go until no more pages
     
     try {
-      for (let currentPage = startPage; currentPage <= endPage; currentPage++) {
+      while (currentPage <= maxPages) {
         console.log(`\n=== Batch Scraping page ${currentPage}/${endPage} ===`);
         
         const pageUrl = currentPage === 1 
@@ -1446,6 +1449,7 @@ class SamehadakuScraper {
           
           if (animeEntries.length === 0) {
             console.log(`No anime entries found on page ${currentPage}, stopping batch...`);
+            maxPages = currentPage - 1; // Update maxPages to actual last page
             break;
           }
           
@@ -1530,10 +1534,13 @@ class SamehadakuScraper {
           console.log(`Added ${addedCount} new anime from page ${currentPage}`);
           
           // Add longer delay between pages for production
-          if (currentPage < endPage) {
+          if (currentPage < maxPages) {
             console.log('Waiting 2 seconds before next page...');
             await this.delay(2000);
           }
+          
+          // Move to next page
+          currentPage++;
           
         } catch (error) {
           console.error(`Error accessing page ${currentPage}:`, error.message);
@@ -1551,14 +1558,16 @@ class SamehadakuScraper {
     }
   }
 
-  async scrapeLatestEpisodesBatch(startPage = 1, endPage = 10) {
-    console.log(`Starting latest episodes batch scraping from page ${startPage} to ${endPage}...`);
+  async scrapeLatestEpisodesBatch(startPage = 1, endPage = null) {
+    console.log(`Starting latest episodes batch scraping from page ${startPage}${endPage ? ` to ${endPage}` : ' until no more pages'}...`);
     
     const allLatestEpisodes = [];
     let successfulPages = 0;
+    let currentPage = startPage;
+    let maxPages = endPage || 1000; // If no endPage specified, go until no more pages
     
     try {
-      for (let currentPage = startPage; currentPage <= endPage; currentPage++) {
+      while (currentPage <= maxPages) {
         console.log(`\n=== Latest Episodes Batch Scraping page ${currentPage}/${endPage} ===`);
         
         const pageUrl = currentPage === 1 
@@ -1628,6 +1637,7 @@ class SamehadakuScraper {
 
           if (pageEpisodes.length === 0) {
             console.log(`No episode entries found on page ${currentPage}, stopping batch...`);
+            maxPages = currentPage - 1; // Update maxPages to actual last page
             break;
           }
           
@@ -1645,10 +1655,13 @@ class SamehadakuScraper {
           console.log(`Added ${pageEpisodes.length} episodes from page ${currentPage}`);
           
           // Add longer delay between pages for production
-          if (currentPage < endPage) {
+          if (currentPage < maxPages) {
             console.log('Waiting 2 seconds before next page...');
             await this.delay(2000);
           }
+          
+          // Move to next page
+          currentPage++;
           
         } catch (error) {
           console.error(`Error accessing page ${currentPage}:`, error.message);
@@ -1657,7 +1670,7 @@ class SamehadakuScraper {
         }
       }
       
-      console.log(`✅ Latest episodes batch scraping completed! Total episodes found: ${allLatestEpisodes.length} from ${successfulPages} pages`);
+      console.log(`✅ Latest episodes batch scraping completed! Total episodes found: ${allLatestEpisodes.length} from ${successfulPages} pages (stopped at page ${maxPages})`);
       return allLatestEpisodes;
       
     } catch (error) {
@@ -1684,6 +1697,41 @@ class SamehadakuScraper {
       return data;
     } catch (error) {
       console.error('Error saving latest episodes:', error);
+      throw error;
+    }
+  }
+
+  async scrapeAllPages() {
+    console.log('🚀 Starting comprehensive scraping of ALL pages from Samehadaku...');
+    console.log('This will scrape until no more pages are found');
+    
+    try {
+      // Scrape all anime list pages
+      console.log('\n📚 Phase 1: Scraping all anime list pages...');
+      const allAnime = await this.scrapeAnimeList();
+      
+      // Scrape all latest episodes pages
+      console.log('\n🎬 Phase 2: Scraping all latest episodes pages...');
+      const allLatestEpisodes = await this.scrapeLatestEpisodesBatch();
+      
+      // Save both datasets
+      console.log('\n💾 Phase 3: Saving all data...');
+      await this.saveAnimeList(allAnime);
+      await this.saveLatestEpisodes(allLatestEpisodes);
+      
+      console.log('\n🎉 Comprehensive scraping completed!');
+      console.log(`📚 Total anime found: ${allAnime.length}`);
+      console.log(`🎬 Total episodes found: ${allLatestEpisodes.length}`);
+      
+      return {
+        anime: allAnime,
+        episodes: allLatestEpisodes,
+        totalAnime: allAnime.length,
+        totalEpisodes: allLatestEpisodes.length
+      };
+      
+    } catch (error) {
+      console.error('❌ Error during comprehensive scraping:', error);
       throw error;
     }
   }

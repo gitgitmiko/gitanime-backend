@@ -1656,4 +1656,14 @@ app.get('/api/cron-status', async (req, res) => {
 // Start server
 app.listen(PORT, () => {
   console.log(`GitAnime API server running on port ${PORT}`);
-  console.log(`
+  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+});
+
+// Export for Vercel
+module.exports = app;
+
+// Initialize scraping in all environments
+// Auto-scraping will run daily at midnight (12 AM)
+console.log(`${process.env.NODE_ENV || 'development'} mode: Initializing scraper...`);
+scraper.initialize();
